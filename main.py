@@ -12,6 +12,7 @@ EFL Guru - Versão 30.1 (A MURALHA INQUEBRÁVEL - FIX SINTAXE TOTAL)
 - JOGABILIDADE: --confrontar (narração completa), --ranking, --team.
 - ECONOMIA: --saldo, --doar, --contratar, --vender.
 - GESTÃO: --elenco, --escalar.
+- SERVIDOR RENDER (NOVO): Integrado sistema Flask para UptimeRobot.
 ----------------------------------------------------------------------
 """
 
@@ -29,6 +30,24 @@ from io import BytesIO
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
+from flask import Flask
+from threading import Thread
+
+# --- 0. SISTEMA WEB (ANTI-SONO PARA A RENDER) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot EFL Guru está ONLINE na Render!"
+
+def run():
+    # Roda um servidor web simples na porta 8080
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    # Cria uma thread separada para não travar o bot do Discord
+    t = Thread(target=run)
+    t.start()
 
 # --- 1. CONFIGURAÇÕES E CHAVES ---
 env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -200,7 +219,8 @@ class AddPlayerModal(discord.ui.Modal, title='Definir Status da Carta'):
         self.rbx_name, self.img_url = rbx_name, img_url
         self.ovr = discord.ui.TextInput(label='Overall (OVR)', placeholder='85', min_length=1, max_length=2)
         self.pos = discord.ui.TextInput(label='Posição (CA, MC, GOL...)', placeholder='CA', min_length=2, max_length=3)
-        self.add_item(self.ovr); self.add_item(self.pos)
+        self.add_item(self.ovr)
+        self.add_item(self.pos)
 
     async def on_submit(self, inter: discord.Interaction):
         try:
@@ -215,7 +235,8 @@ class AddPlayerModal(discord.ui.Modal, title='Definir Status da Carta'):
                 cards = res.data[0]["data"] if res.data else []
                 cards.append(new_p)
                 supabase.table("jogadores").upsert({"id": "ROBLOX_CARDS", "data": cards}).execute()
-                global ALL_PLAYERS; fetch_and_parse_players()
+                global ALL_PLAYERS
+                fetch_and_parse_players()
             buf = await asyncio.to_thread(render_single_card_sync, new_p)
             await inter.response.send_message(f"✅ **JOGADOR CADASTRADO!**", file=discord.File(buf, "card.png"))
         except:
@@ -227,9 +248,11 @@ class EditPlayerModal(discord.ui.Modal, title='Editar Atleta'):
         self.nick = nick
         self.ovr = discord.ui.TextInput(label='Novo Overall (OVR)', placeholder='92', min_length=1, max_length=2)
         self.add_item(self.ovr)
+        
     async def on_submit(self, inter: discord.Interaction):
         try:
-            o = int(self.ovr.value); v = o * 25000
+            o = int(self.ovr.value)
+            v = o * 25000
             async with data_lock:
                 res = supabase.table("jogadores").select("data").eq("id", "ROBLOX_CARDS").execute()
                 cards = res.data[0]["data"]
@@ -279,9 +302,11 @@ async def get_user_data(user_id):
         data = res.data[0]["data"]
         defaults = [("losses", 0), ("achievements", []), ("match_history", []), ("contracted_players", [])]
         for key, val in defaults:
-            if key not in data: data[key] = val
+            if key not in data: 
+                data[key] = val
         return data
-    except Exception: return None
+    except Exception: 
+        return None
 
 async def save_user_data(user_id, data):
     try:
@@ -306,12 +331,15 @@ def normalize_str(s):
     return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn').lower()
     
 def get_player_effective_overall(player): 
-    if not player: return 0
+    if not player: 
+        return 0
     return player.get('overall', 0) + player.get('training_level', 0)
     
 def add_player_defaults(player):
-    if 'nickname' not in player: player['nickname'] = None
-    if 'training_level' not in player: player['training_level'] = 0
+    if 'nickname' not in player: 
+        player['nickname'] = None
+    if 'training_level' not in player: 
+        player['training_level'] = 0
     return player
 
 async def check_and_grant_achievement(user_id, achievement_id, ctx=None):
@@ -384,7 +412,7 @@ def create_team_image_sync(team_players, club_name):
                 p_img = Image.open(BytesIO(p_img_res.content)).convert("RGBA")
                 p_img.thumbnail((40, 40), Image.Resampling.LANCZOS)
                 field_img.paste(p_img, (int(cx - p_img.width//2), int(cy - 25)), p_img)
-            except:
+            except: 
                 pass
             
             disp_name = player.get('nickname') or player['name'].split(' ')[-1]
@@ -414,62 +442,99 @@ async def generate_team_image(team_players, user):
 # --- 7. CLASSES DE INTERAÇÃO (VIEWS) ---
 
 class AddPlayerView(discord.ui.View):
-    def __init__(self, author, rbx, img): super().__init__(timeout=120); self.author, self.rbx, self.img = author, rbx, img
+    def __init__(self, author, rbx, img): 
+        super().__init__(timeout=120)
+        self.author, self.rbx, self.img = author, rbx, img
+
     @discord.ui.button(label="Definir Status", style=discord.ButtonStyle.success, emoji="⚙️")
     async def btn(self, inter, b): 
-        if inter.user == self.author: await inter.response.send_modal(AddPlayerModal(self.rbx, self.img))
+        if inter.user == self.author: 
+            await inter.response.send_modal(AddPlayerModal(self.rbx, self.img))
 
 class EditPlayerView(discord.ui.View):
-    def __init__(self, author, nick): super().__init__(timeout=120); self.author, self.nick = author, nick
+    def __init__(self, author, nick): 
+        super().__init__(timeout=120)
+        self.author, self.nick = author, nick
+
     @discord.ui.button(label="Editar OVR", style=discord.ButtonStyle.primary, emoji="📝")
     async def btn(self, inter, b): 
-        if inter.user == self.author: await inter.response.send_modal(EditPlayerModal(self.nick))
+        if inter.user == self.author: 
+            await inter.response.send_modal(EditPlayerModal(self.nick))
 
 class KeepOrSellView(discord.ui.View):
-    def __init__(self, author, player): super().__init__(timeout=60); self.author, self.player = author, player
+    def __init__(self, author, player): 
+        super().__init__(timeout=60)
+        self.author, self.player = author, player
+
     @discord.ui.button(label="Manter no Elenco", style=discord.ButtonStyle.green)
     async def keep(self, inter, btn):
         if inter.user != self.author: return
         async with data_lock:
             u = await get_user_data(self.author.id)
-            if self.player['name'] in u["contracted_players"]: return await inter.response.send_message("Já possui!", ephemeral=True)
-            u['squad'].append(self.player); u['contracted_players'].append(self.player['name']); await save_user_data(self.author.id, u)
+            if self.player['name'] in u["contracted_players"]: 
+                return await inter.response.send_message("Já possui!", ephemeral=True)
+            u['squad'].append(self.player)
+            u['contracted_players'].append(self.player['name'])
+            await save_user_data(self.author.id, u)
         await inter.response.edit_message(content=f"✅ **{self.player['name']}** guardado!", embed=None, view=None)
+
     @discord.ui.button(label="Vender Rápido", style=discord.ButtonStyle.red)
     async def sell(self, inter, btn):
         if inter.user != self.author: return
         p = int(self.player['value'] * SALE_PERCENTAGE)
         async with data_lock:
-            u = await get_user_data(self.author.id); u['money'] += p; await save_user_data(self.author.id, u)
+            u = await get_user_data(self.author.id)
+            u['money'] += p
+            await save_user_data(self.author.id, u)
         await inter.response.edit_message(content=f"💰 Vendido por **R$ {p:,}**.", embed=None, view=None)
 
 class BuyPlayerView(discord.ui.View):
-    def __init__(self, author, player): super().__init__(timeout=60); self.author, self.player = author, player
+    def __init__(self, author, player): 
+        super().__init__(timeout=60)
+        self.author, self.player = author, player
+
     @discord.ui.button(label="Assinar Contrato", style=discord.ButtonStyle.green, emoji="✍️")
     async def buy(self, inter: discord.Interaction, btn: discord.ui.Button):
         if inter.user != self.author: return
         async with data_lock:
             u_data = await get_user_data(self.author.id)
-            if self.player['name'] in u_data["contracted_players"]: return await inter.response.send_message("❌ Já tem esse atleta!", ephemeral=True)
-            if u_data['money'] < self.player['value']: return await inter.response.send_message(f"💸 Sem grana!", ephemeral=True)
-            u_data['money'] -= self.player['value']; u_data['squad'].append(self.player); u_data['contracted_players'].append(self.player['name']); await save_user_data(self.author.id, u_data)
+            if self.player['name'] in u_data["contracted_players"]: 
+                return await inter.response.send_message("❌ Já tem esse atleta!", ephemeral=True)
+            if u_data['money'] < self.player['value']: 
+                return await inter.response.send_message(f"💸 Sem grana!", ephemeral=True)
+            u_data['money'] -= self.player['value']
+            u_data['squad'].append(self.player)
+            u_data['contracted_players'].append(self.player['name'])
+            await save_user_data(self.author.id, u_data)
             await inter.response.edit_message(content=f"🤝 **NEGÓCIO FECHADO!**", embed=None, view=None)
 
 class ActionView(discord.ui.View):
     def __init__(self, ctx, res, callback, name, **kwargs):
-        super().__init__(timeout=120); self.ctx, self.res, self.callback, self.name, self.i, self.kwargs = ctx, res, callback, name, 0, kwargs
+        super().__init__(timeout=120)
+        self.ctx, self.res, self.callback, self.name, self.i, self.kwargs = ctx, res, callback, name, 0, kwargs
         self.children[2].label = name
+
     async def create_embed(self, inter=None):
         p = self.res[self.i]
         e = discord.Embed(title=f"⚙️ {self.name}", description=f"**Jogador:** {p['name']}\n**OVR:** {p['overall']}", color=discord.Color.orange())
         e.set_thumbnail(url=p['image'])
-        self.children[0].disabled = (self.i == 0); self.children[1].disabled = (self.i == len(self.res)-1)
-        if inter: await inter.response.edit_message(embed=e, view=self)
-        else: return e
+        self.children[0].disabled = (self.i == 0)
+        self.children[1].disabled = (self.i == len(self.res)-1)
+        if inter: 
+            await inter.response.edit_message(embed=e, view=self)
+        else: 
+            return e
+
     @discord.ui.button(label="⏪", style=discord.ButtonStyle.grey)
-    async def prev(self, inter, b): self.i -= 1; await self.create_embed(inter)
+    async def prev(self, inter, b): 
+        self.i -= 1
+        await self.create_embed(inter)
+
     @discord.ui.button(label="⏩", style=discord.ButtonStyle.grey)
-    async def next(self, inter, b): self.i += 1; await self.create_embed(inter)
+    async def next(self, inter, b): 
+        self.i += 1
+        await self.create_embed(inter)
+
     @discord.ui.button(style=discord.ButtonStyle.primary)
     async def act(self, inter, b): 
         if inter.user == self.ctx.author: 
@@ -483,7 +548,7 @@ class ActionView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f'🟢 EFL Guru ONLINE! Todas as linhas carregadas.')
+    print(f'🟢 EFL Guru ONLINE! Todas as linhas carregadas e Render ativado.')
     fetch_and_parse_players()
     await bot.change_presence(activity=discord.Game(name=f"{BOT_PREFIX}help | EFL Pro"))
 
@@ -491,7 +556,8 @@ async def on_ready():
 async def maintenance_check(ctx):
     global MAINTENANCE_MODE
     if MAINTENANCE_MODE and not ctx.author.guild_permissions.administrator:
-        await ctx.send("🛠️ **SISTEMA EM MANUTENÇÃO.**"); return False
+        await ctx.send("🛠️ **SISTEMA EM MANUTENÇÃO.**")
+        return False
     return True
 
 @bot.event
@@ -505,13 +571,15 @@ async def on_command_error(ctx, error):
 @bot.command(name='lock')
 @commands.has_permissions(administrator=True)
 async def lock_cmd(ctx):
-    global MAINTENANCE_MODE; MAINTENANCE_MODE = True
+    global MAINTENANCE_MODE
+    MAINTENANCE_MODE = True
     await ctx.send("🛑 **SISTEMA BLOQUEADO.**")
 
 @bot.command(name='unlock')
 @commands.has_permissions(administrator=True)
 async def unlock_cmd(ctx):
-    global MAINTENANCE_MODE; MAINTENANCE_MODE = False
+    global MAINTENANCE_MODE
+    MAINTENANCE_MODE = False
     await ctx.send("🟢 **SISTEMA LIBERADO.**")
 
 def get_roblox_data_sync(username):
@@ -521,7 +589,8 @@ def get_roblox_data_sync(username):
         uid = res["data"][0]["id"]
         res2 = requests.get(f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={uid}&size=420x420&format=Png&isCircular=false", timeout=5).json()
         return res2["data"][0]["imageUrl"] if res2.get("data") else None
-    except: return None
+    except: 
+        return None
 
 @bot.command(name='addplayer')
 @commands.has_permissions(administrator=True)
@@ -530,36 +599,53 @@ async def add_player_cmd(ctx, *, query: str):
     try:
         member = await commands.MemberConverter().convert(ctx, query)
         rbx_name = member.display_name.split()[-1].strip()
-    except: rbx_name = query.strip()
+    except: 
+        rbx_name = query.strip()
     
     img = await asyncio.to_thread(get_roblox_data_sync, rbx_name)
-    if not img: return await msg.edit(content=f"❌ Nick `{rbx_name}` não existe.")
+    if not img: 
+        return await msg.edit(content=f"❌ Nick `{rbx_name}` não existe.")
     
     view = AddPlayerView(ctx.author, rbx_name, img)
     emb = discord.Embed(title="📸 Perfil Encontrado", color=discord.Color.green())
-    emb.set_thumbnail(url=img); await msg.edit(content=None, embed=emb, view=view)
+    emb.set_thumbnail(url=img)
+    await msg.edit(content=None, embed=emb, view=view)
 
 @bot.command(name='bulkadd')
 @commands.has_permissions(administrator=True)
 async def bulk_add_cmd(ctx):
-    if not ctx.message.attachments: return await ctx.send("❌ Anexe um arquivo `.txt`.")
+    if not ctx.message.attachments: 
+        return await ctx.send("❌ Anexe um arquivo `.txt`.")
     att = ctx.message.attachments[0]
     status = await ctx.send("⏳ **Iniciando Bulk Add...**")
     try:
-        content = (await att.read()).decode('utf-8'); lines = content.strip().split('\n')
+        content = (await att.read()).decode('utf-8')
+        lines = content.strip().split('\n')
         res = supabase.table("jogadores").select("data").eq("id", "ROBLOX_CARDS").execute()
-        cards = res.data[0]["data"] if res.data else []; names = [p['name'].lower() for p in cards]
+        cards = res.data[0]["data"] if res.data else []
+        names = [p['name'].lower() for p in cards]
         added = []
         for line in lines:
-            if ';' not in line: continue
-            parts = line.split(';'); n, pos, ovr = parts[0].strip(), parts[1].strip().upper(), int(parts[2].strip())
-            if n.lower() in names or pos not in SLOT_MAPPING: continue
+            if ';' not in line: 
+                continue
+            parts = line.split(';')
+            n = parts[0].strip()
+            pos = parts[1].strip().upper()
+            ovr = int(parts[2].strip())
+            
+            if n.lower() in names or pos not in SLOT_MAPPING: 
+                continue
+                
             img = await asyncio.to_thread(get_roblox_data_sync, n)
             if img:
                 cards.append({"name": n, "image": img, "overall": ovr, "position": pos, "value": ovr*25000})
-                names.append(n.lower()); added.append(n); await asyncio.sleep(0.4)
+                names.append(n.lower())
+                added.append(n)
+                await asyncio.sleep(0.4)
+                
         if added: 
-            supabase.table("jogadores").upsert({"id": "ROBLOX_CARDS", "data": cards}).execute(); fetch_and_parse_players()
+            supabase.table("jogadores").upsert({"id": "ROBLOX_CARDS", "data": cards}).execute()
+            fetch_and_parse_players()
         await status.edit(content=f"✅ Adicionados: **{len(added)}** atletas.")
     except Exception as e: 
         await status.edit(content=f"❌ Erro: {e}")
@@ -583,7 +669,8 @@ async def sync_cmd(ctx):
 async def obter_cmd(ctx):
     u = await get_user_data(ctx.author.id)
     livres = [p for p in ALL_PLAYERS if p["name"] not in u["contracted_players"]]
-    if not livres: return await ctx.send("❌ Mercado vazio!")
+    if not livres: 
+        return await ctx.send("❌ Mercado vazio!")
     p = random.choice(livres)
     async with image_lock: 
         buf = await asyncio.to_thread(render_single_card_sync, p)
@@ -591,11 +678,14 @@ async def obter_cmd(ctx):
 
 @bot.command(name='contratar')
 async def contratar_cmd(ctx, *, q: str):
-    sq = normalize_str(q); u = await get_user_data(ctx.author.id)
+    sq = normalize_str(q)
+    u = await get_user_data(ctx.author.id)
     match = [p for p in ALL_PLAYERS if sq in normalize_str(p['name']) or sq.upper() in p['position']]
-    if not match: return await ctx.send("❌ Nenhum atleta encontrado.")
+    if not match: 
+        return await ctx.send("❌ Nenhum atleta encontrado.")
     p = match[0]
-    if p['name'] in u['contracted_players']: return await ctx.send("❌ Já possui esse atleta.")
+    if p['name'] in u['contracted_players']: 
+        return await ctx.send("❌ Já possui esse atleta.")
     async with image_lock: 
         buf = await asyncio.to_thread(render_single_card_sync, p)
     view = BuyPlayerView(ctx.author, p)
@@ -603,33 +693,45 @@ async def contratar_cmd(ctx, *, q: str):
 
 @bot.command(name='saldo')
 async def saldo_cmd(ctx):
-    d = await get_user_data(ctx.author.id); await ctx.send(f"🏦 **SALDO:** R$ {d['money']:,}")
+    d = await get_user_data(ctx.author.id)
+    await ctx.send(f"🏦 **SALDO:** R$ {d['money']:,}")
 
 @bot.command(name='doar')
 async def doar_cmd(ctx, target: discord.Member, amount: int):
     if ctx.author == target or amount <= 0: return
     async with data_lock:
-        s_data = await get_user_data(ctx.author.id); t_data = await get_user_data(target.id)
-        if s_data['money'] < amount: return await ctx.send("❌ Saldo insuficiente.")
-        s_data['money'] -= amount; t_data['money'] += amount
-        await save_user_data(ctx.author.id, s_data); await save_user_data(target.id, t_data)
+        s_data = await get_user_data(ctx.author.id)
+        t_data = await get_user_data(target.id)
+        if s_data['money'] < amount: 
+            return await ctx.send("❌ Saldo insuficiente.")
+        s_data['money'] -= amount
+        t_data['money'] += amount
+        await save_user_data(ctx.author.id, s_data)
+        await save_user_data(target.id, t_data)
     await ctx.send(f"💸 **TRANSFERÊNCIA:** R$ {amount:,} para {target.display_name}!")
 
 @bot.command(name='vender')
 async def vender_cmd(ctx, *, q: str):
-    sq = normalize_str(q); d = await get_user_data(ctx.author.id)
+    sq = normalize_str(q)
+    d = await get_user_data(ctx.author.id)
     p = next((x for x in d['squad'] if sq in normalize_str(x['name'])), None)
-    if not p: return await ctx.send("❌ Não está no seu elenco.")
-    d['squad'] = [x for x in d['squad'] if x['name'] != p['name']]; d['contracted_players'].remove(p['name'])
+    if not p: 
+        return await ctx.send("❌ Não está no seu elenco.")
+    d['squad'] = [x for x in d['squad'] if x['name'] != p['name']]
+    d['contracted_players'].remove(p['name'])
     for i, x in enumerate(d['team']): 
-        if x and x['name'] == p['name']: d['team'][i] = None
-    cash = int(p['value'] * 0.5); d['money'] += cash; await save_user_data(ctx.author.id, d)
+        if x and x['name'] == p['name']: 
+            d['team'][i] = None
+    cash = int(p['value'] * 0.5)
+    d['money'] += cash
+    await save_user_data(ctx.author.id, d)
     await ctx.send(f"💰 Vendido por **R$ {cash:,}**.")
 
 @bot.command(name='team')
 async def team_cmd(ctx):
     d = await get_user_data(ctx.author.id)
-    if not any(d['team']): return await ctx.send("❌ Time vazio.")
+    if not any(d['team']): 
+        return await ctx.send("❌ Time vazio.")
     msg = await ctx.send("⚙️ Desenhando...")
     async with image_lock:
         try:
@@ -640,54 +742,94 @@ async def team_cmd(ctx):
             await msg.edit(content="❌ Erro gráfico.")
 
 async def perform_escalar(ctx, j):
-    d = await get_user_data(ctx.author.id); t = d['team']
-    if any(x and x['name'] == j['name'] for x in t): return await ctx.send("❌ Já é titular.")
+    d = await get_user_data(ctx.author.id)
+    t = d['team']
+    if any(x and x['name'] == j['name'] for x in t): 
+        return await ctx.send("❌ Já é titular.")
     done = False
     for pos in j['position'].split('/'):
         if pos in SLOT_MAPPING:
             for i in SLOT_MAPPING[pos]:
-                if t[i] is None: t[i] = j; done = True; break
+                if t[i] is None: 
+                    t[i] = j
+                    done = True
+                    break
         if done: break
-    if done: await save_user_data(ctx.author.id, d); await ctx.send(f"✅ Escalei **{j['name']}**!")
-    else: await ctx.send("❌ Sem vaga livre.")
+    if done: 
+        await save_user_data(ctx.author.id, d)
+        await ctx.send(f"✅ Escalei **{j['name']}**!")
+    else: 
+        await ctx.send("❌ Sem vaga livre.")
 
 @bot.command(name='escalar')
 async def escalar_cmd(ctx, *, q: str):
-    sq = normalize_str(q); d = await get_user_data(ctx.author.id)
+    sq = normalize_str(q)
+    d = await get_user_data(ctx.author.id)
     res = [p for p in d['squad'] if sq in normalize_str(p['name'])]
-    if not res: return await ctx.send("❌ Não encontrado.")
-    if len(res) == 1: await perform_escalar(ctx, res[0])
+    if not res: 
+        return await ctx.send("❌ Não encontrado.")
+    if len(res) == 1: 
+        await perform_escalar(ctx, res[0])
     else:
-        v = ActionView(ctx, res, perform_escalar, "Escalar"); await ctx.send(embed=await v.create_embed(), view=v)
+        v = ActionView(ctx, res, perform_escalar, "Escalar")
+        await ctx.send(embed=await v.create_embed(), view=v)
 
 @bot.command(name='elenco')
 async def elenco_cmd(ctx):
     d = await get_user_data(ctx.author.id)
-    if not d['squad']: return await ctx.send("❌ Vazio.")
+    if not d['squad']: 
+        return await ctx.send("❌ Vazio.")
     txt = "\n".join([f"• **{p['name']}** | ⭐ {p['overall']}" for p in sorted(d['squad'], key=lambda x: x['overall'], reverse=True)[:25]])
     await ctx.send(embed=discord.Embed(title="🎽 Seu Elenco", description=txt, color=discord.Color.blue()))
 
 @bot.command(name='confrontar')
 async def confrontar_cmd(ctx, oponente: discord.Member):
-    if ctx.author == oponente or oponente.bot: return
-    d1, d2 = await get_user_data(ctx.author.id), await get_user_data(oponente.id)
-    if None in d1['team'] or None in d2['team']: return await ctx.send("🚨 Precisa de 11 titulares!")
-    s1, s2 = 0, 0; log = ["🎙️ **Início de partida!**"]; emb = discord.Embed(title=f"🏟️ {ctx.author.name} x {oponente.name}", description="0 - 0", color=discord.Color.dark_grey())
+    if ctx.author == oponente or oponente.bot: 
+        return
+    d1 = await get_user_data(ctx.author.id)
+    d2 = await get_user_data(oponente.id)
+    if None in d1['team'] or None in d2['team']: 
+        return await ctx.send("🚨 Precisa de 11 titulares!")
+        
+    s1, s2 = 0, 0
+    log = ["🎙️ **Início de partida!**"]
+    emb = discord.Embed(title=f"🏟️ {ctx.author.name} x {oponente.name}", description="0 - 0", color=discord.Color.dark_grey())
     msg = await ctx.send(embed=emb)
+    
     for min in [30, 60, 90]:
-        await asyncio.sleep(2.5); f1, f2 = sum(x['overall'] for x in d1['team'] if x), sum(x['overall'] for x in d2['team'] if x)
+        await asyncio.sleep(2.5)
+        f1 = sum(x['overall'] for x in d1['team'] if x)
+        f2 = sum(x['overall'] for x in d2['team'] if x)
+        
         if f1 + random.randint(0,40) > f2 + random.randint(0,40):
-            at = random.choice([p for p in d1['team'] if p])['name']; log.append(f"{min}' " + random.choice(GOAL_NARRATIONS).format(attacker=at)); s1 += 1
+            at = random.choice([p for p in d1['team'] if p])['name']
+            log.append(f"{min}' " + random.choice(GOAL_NARRATIONS).format(attacker=at))
+            s1 += 1
         elif f2 + random.randint(0,40) > f1 + random.randint(0,40):
-            at = random.choice([p for p in d2['team'] if p])['name']; log.append(f"{min}' " + random.choice(GOAL_NARRATIONS).format(attacker=at)); s2 += 1
+            at = random.choice([p for p in d2['team'] if p])['name']
+            log.append(f"{min}' " + random.choice(GOAL_NARRATIONS).format(attacker=at))
+            s2 += 1
         else:
             gk = random.choice([p for p in d2['team'] if p and p['position'] == 'GOL'] or [p for p in d2['team'] if p])['name']
             log.append(f"{min}' " + random.choice(SAVE_NARRATIONS).format(keeper=gk, attacker="adv"))
-        emb.description = f"### Placar: {s1} - {s2}\n" + "\n".join(log[-3:]); await msg.edit(embed=emb)
-    if s1 > s2: d1['wins'] += 1; d2['losses'] += 1; res = f"Vitória de **{ctx.author.name}**!"
-    elif s2 > s1: d2['wins'] += 1; d1['losses'] += 1; res = f"Vitória de **{oponente.name}**!"
-    else: res = "Empate!"
-    await save_user_data(ctx.author.id, d1); await save_user_data(oponente.id, d2); await ctx.send(f"🏁 **FIM:** {res}")
+            
+        emb.description = f"### Placar: {s1} - {s2}\n" + "\n".join(log[-3:])
+        await msg.edit(embed=emb)
+        
+    if s1 > s2: 
+        d1['wins'] += 1
+        d2['losses'] += 1
+        res = f"Vitória de **{ctx.author.name}**!"
+    elif s2 > s1: 
+        d2['wins'] += 1
+        d1['losses'] += 1
+        res = f"Vitória de **{oponente.name}**!"
+    else: 
+        res = "Empate!"
+        
+    await save_user_data(ctx.author.id, d1)
+    await save_user_data(oponente.id, d2)
+    await ctx.send(f"🏁 **FIM:** {res}")
 
 @bot.command(name='ranking')
 async def ranking_cmd(ctx):
@@ -708,5 +850,8 @@ async def help_cmd(ctx):
 # --- INICIALIZAÇÃO ---
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
-    if token: bot.run(token)
-    else: print("❌ Token ausente.")
+    if token: 
+        keep_alive() # INICIA O SERVIDOR WEB PARA O UPTIMEROBOT
+        bot.run(token)
+    else: 
+        print("❌ Token ausente.")
