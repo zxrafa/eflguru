@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 30.7 (A MURALHA INQUEBRÁVEL - CARDS ULTRA PRO)
+EFL Guru - Versão 30.9 (A MURALHA INQUEBRÁVEL - FONTES AUTO-DOWNLOAD FIX)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Sem otimizações, mantendo toda a base original.
 - SINTAXE E WEB SERVER: Flask integrado para UptimeRobot na Render.
-- AJUSTE DE NOMES: Fonte adaptável que diminui para caber no card (TAMANHO MAX).
-- VISUAL DO CARD: Fundo em gradiente, fontes ampliadas e Fade (atenuar) no jogador.
+- AJUSTE DE NOMES: Fonte adaptável com DOWNLOAD AUTOMÁTICO DE FONTE.
+- VISUAL DO CARD: Fundo em gradiente, fontes GIGANTES garantidas e Fade.
 - FORMATO 6v6: Prancheta reduzida para 6 slots.
 - POSIÇÕES OFICIAIS: GK, CB, MCD, MC, MCO, ST.
+- VISUAL DO TIME: Formação 6v6 usando a fonte baixada para máxima qualidade.
 - BULK ADD: Comando --bulkadd via arquivo .txt (NOVO FORMATO: Nick OVR Pos)
 - ADMINISTRAÇÃO: --lock, --unlock, --addplayer, --editplayer.
 - JOGABILIDADE: --confrontar (exige 6 titulares), --ranking, --team.
@@ -65,6 +66,23 @@ BOT_PREFIX = "--"
 INITIAL_MONEY = 1000000000
 SALE_PERCENTAGE = 0.5
 
+# --- SISTEMA DE FONTE AUTOMÁTICA ---
+FONT_PATH = "EFL_Font.ttf"
+FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Black.ttf"
+
+def ensure_font_exists():
+    if not os.path.exists(FONT_PATH):
+        try:
+            print("⬇️ Baixando fonte profissional para o servidor...")
+            r = requests.get(FONT_URL, allow_redirects=True)
+            open(FONT_PATH, 'wb').write(r.content)
+            print("✅ Fonte baixada com sucesso!")
+        except Exception as e:
+            print(f"❌ Erro ao baixar fonte: {e}")
+
+# Garante que a fonte existe antes de começar
+ensure_font_exists()
+
 # --- MAPEAMENTO 6v6 ---
 SLOT_MAPPING = {
     "GK": [0], 
@@ -75,14 +93,14 @@ SLOT_MAPPING = {
     "ST": [5]
 }
 
-# --- COORDENADAS DA PRANCHETA PARA 6 JOGADORES ---
+# --- COORDENADAS DA PRANCHETA (Formação Diamante 6v6) ---
 POSITIONS_COORDS = {
-    0: (185, 420),  # GK (Goleiro)
-    1: (185, 350),  # CB (Zagueiro Central)
-    2: (185, 280),  # MCD (Volante Defensivo)
-    3: (100, 210),  # MC (Meia Central Esquerdo)
-    4: (270, 210),  # MCO (Meia Atacante Direito)
-    5: (185, 110)   # ST (Atacante)
+    0: (210, 485),  # GK
+    1: (210, 395),  # CB
+    2: (210, 295),  # MCD
+    3: (95, 205),   # MC
+    4: (325, 205),  # MCO
+    5: (210, 95)    # ST
 }
 
 ALL_PLAYERS = []
@@ -139,13 +157,12 @@ ACHIEVEMENTS = {
 # --- 3. MOTOR GRÁFICO (CARD RENDER + AJUSTE DE NOME E FADE) ---
 
 def render_single_card_sync(player):
-    """Gera uma imagem de card individual estilo EA FC com fade na imagem e fontes maiores"""
+    """Gera uma imagem de card individual estilo EA FC com fade e fontes robustas"""
     c_w, c_h = 300, 450
     card = Image.new("RGBA", (c_w, c_h), (0, 0, 0, 0))
     
     ovr = player.get('overall', 60)
     
-    # Cores por raridade (Cor Topo, Cor Base, Borda e Texto)
     if ovr >= 90: # Special
         c_top = (70, 15, 90); c_bot = (30, 5, 40); border_color = "#f39c12"; txt_color = "#f1c40f"
     elif ovr >= 80: # Gold
@@ -155,7 +172,6 @@ def render_single_card_sync(player):
     else: # Bronze
         c_top = (100, 70, 45); c_bot = (40, 25, 15); border_color = "#cd7f32"; txt_color = "white"
 
-    # 1. Fundo com Gradiente
     bg_img = Image.new("RGBA", (c_w, c_h))
     draw_bg = ImageDraw.Draw(bg_img)
     for y in range(c_h):
@@ -164,38 +180,31 @@ def render_single_card_sync(player):
         b = int(c_top[2] + (c_bot[2] - c_top[2]) * (y / c_h))
         draw_bg.line([(0, y), (c_w, y)], fill=(r, g, b, 255))
         
-    # Adicionar alguns detalhes de fundo (linhas geométricas sutis)
     draw_bg.line([(0, 150), (c_w, 100)], fill=(255, 255, 255, 15), width=40)
     draw_bg.line([(0, 300), (c_w, 250)], fill=(255, 255, 255, 10), width=60)
 
-    # Máscara de borda arredondada
     mask = Image.new("L", (c_w, c_h), 0)
     ImageDraw.Draw(mask).rounded_rectangle([5, 5, c_w-5, c_h-5], radius=25, fill=255)
     card.paste(bg_img, (0, 0), mask)
     
     draw = ImageDraw.Draw(card)
-    # Borda externa
     draw.rounded_rectangle([5, 5, c_w-5, c_h-5], radius=25, outline=border_color, width=6)
     
-    # 2. Foto do Roblox com Efeito Atenuar (Fade)
     try:
         p_img_res = requests.get(player["image"], timeout=3)
         p_img = Image.open(BytesIO(p_img_res.content)).convert("RGBA")
         p_img = p_img.resize((240, 240), Image.Resampling.LANCZOS)
         
-        # Criando o Fade (Alpha Channel)
         r_c, g_c, b_c, a_c = p_img.split()
         fade = Image.new("L", (1, p_img.height))
         for y in range(p_img.height):
-            if y < p_img.height * 0.60: # 60% superior da imagem fica totalmente visível
+            if y < p_img.height * 0.60:
                 fade.putpixel((0, y), 255)
-            else: # 40% inferior vai esmaecendo
+            else:
                 alpha = int(255 * (1.0 - (y - p_img.height * 0.60) / (p_img.height * 0.40)))
                 fade.putpixel((0, y), max(0, min(255, alpha)))
         
         fade = fade.resize(p_img.size)
-        
-        # Mesclando transparência original com o efeito de fade
         a_data = a_c.load()
         f_data = fade.load()
         for y in range(p_img.height):
@@ -203,43 +212,37 @@ def render_single_card_sync(player):
                 a_data[x, y] = int((a_data[x, y] * f_data[x, y]) / 255)
         
         p_img = Image.merge("RGBA", (r_c, g_c, b_c, a_c))
-        
-        # Centralizando um pouco mais abaixo para encaixar com as fontes maiores
         card.paste(p_img, (int(c_w/2 - 120), 80), p_img)
     except Exception:
         pass
 
-    # 3. Fontes Maiores para OVR e POS
+    # CARREGAMENTO GARANTIDO DA FONTE BAIXADA
     try:
-        f_ovr = ImageFont.truetype("arialbd.ttf", 85) # OVR Bem maior
-        f_pos = ImageFont.truetype("arialbd.ttf", 40) # Posição maior
+        f_ovr = ImageFont.truetype(FONT_PATH, 90) # OVR Gigante
+        f_pos = ImageFont.truetype(FONT_PATH, 45) # Posição Gigante
     except:
         f_ovr = f_pos = ImageFont.load_default()
 
-    # Escrevendo OVR e Posição
-    draw.text((35, 40), str(ovr), font=f_ovr, fill=border_color, anchor="la")
-    draw.text((35, 125), player['position'], font=f_pos, fill="white", anchor="la")
+    draw.text((35, 30), str(ovr), font=f_ovr, fill=border_color, anchor="la")
     
-    # Linha separadora elegante abaixo do jogador
+    # A posição da Posição também ajustada com a nova fonte
+    draw.text((35, 120), player['position'], font=f_pos, fill="white", anchor="la")
+    
     draw.line([40, 310, c_w-40, 310], fill=border_color, width=2)
     
-    # 4. Nome Dinâmico, Maximizado e Centralizado
     nome_cru = player['name'].split()[-1].upper()
     max_text_width = c_w - 40
-    current_font_size = 50 # Tamanho base gigante
+    current_font_size = 50 
     
     try:
-        f_name = ImageFont.truetype("arialbd.ttf", current_font_size)
-        # Reduz até caber no layout do card
+        f_name = ImageFont.truetype(FONT_PATH, current_font_size)
         while f_name.getlength(nome_cru) > max_text_width and current_font_size > 18:
             current_font_size -= 2
-            f_name = ImageFont.truetype("arialbd.ttf", current_font_size)
+            f_name = ImageFont.truetype(FONT_PATH, current_font_size)
     except:
         f_name = ImageFont.load_default()
 
     draw.text((c_w/2, 345), nome_cru, font=f_name, fill=txt_color, anchor="mm")
-    
-    # Linha decorativa na base
     draw.line([c_w/2 - 50, 385, c_w/2 + 50, 385], fill=border_color, width=4)
 
     buf = BytesIO()
@@ -368,45 +371,45 @@ def add_player_defaults(player):
         player['training_level'] = 0
     return player
 
-# --- 6. GERADOR DE IMAGEM DA PRANCHETA (6v6) ---
+# --- 6. GERADOR DE IMAGEM DA PRANCHETA (6v6 REVAMPED) ---
 
 def create_team_image_sync(team_players, club_name):
-    width, height = 370, 500 
-    field_img = Image.new("RGB", (width, height), color="#1e5939")
+    width, height = 420, 550 
+    field_img = Image.new("RGB", (width, height), color="#2E7D32")
     draw = ImageDraw.Draw(field_img, "RGBA")
     
     for i in range(0, height, 25):
         if (i // 25) % 2 == 0: 
-            draw.rectangle([0, i, width, i+25], fill="#184f30")
+            draw.rectangle([0, i, width, i+25], fill="#388E3C")
             
-    line_color = (255, 255, 255, 100)
-    draw.rectangle([10, 10, width-10, height-10], outline=line_color, width=2) 
-    draw.line([10, height//2, width-10, height//2], fill=line_color, width=2) 
-    draw.ellipse([width//2 - 40, height//2 - 40, width//2 + 40, height//2 + 40], outline=line_color, width=2) 
-    draw.rectangle([width//2 - 80, 10, width//2 + 80, 90], outline=line_color, width=2) 
-    draw.rectangle([width//2 - 80, height-90, width//2 + 80, height-10], outline=line_color, width=2) 
+    line_color = (255, 255, 255, 180)
+    draw.rectangle([10, 10, width-10, height-10], outline=line_color, width=3) 
+    draw.line([10, height//2, width-10, height//2], fill=line_color, width=3) 
+    draw.ellipse([width//2 - 50, height//2 - 50, width//2 + 50, height//2 + 50], outline=line_color, width=3) 
+    draw.rectangle([width//2 - 90, 10, width//2 + 90, 100], outline=line_color, width=3) 
+    draw.rectangle([width//2 - 90, height-100, width//2 + 90, height-10], outline=line_color, width=3) 
     
-    draw.rectangle([0, 0, width, 42], fill=(0, 0, 0, 210))
-    draw.rectangle([0, height-30, width, height], fill=(0, 0, 0, 210))
+    draw.rectangle([0, 0, width, 45], fill=(0, 0, 0, 220))
+    draw.rectangle([0, height-35, width, height], fill=(0, 0, 0, 220))
 
     try: 
-        title_font = ImageFont.truetype("arialbd.ttf", 23)
-        name_font = ImageFont.truetype("arialbd.ttf", 9)
-        stat_font = ImageFont.truetype("arialbd.ttf", 10)
-        overall_font = ImageFont.truetype("arialbd.ttf", 14)
-        pos_font = ImageFont.truetype("arialbd.ttf", 10)
+        title_font = ImageFont.truetype(FONT_PATH, 24)
+        name_font = ImageFont.truetype(FONT_PATH, 11)
+        stat_font = ImageFont.truetype(FONT_PATH, 13)
+        overall_font = ImageFont.truetype(FONT_PATH, 16)
+        pos_font = ImageFont.truetype(FONT_PATH, 12)
     except Exception: 
         title_font = name_font = stat_font = overall_font = pos_font = ImageFont.load_default()
 
     nome_time = club_name or "Clube Sem Nome"
-    draw.text((width//2, 21), nome_time.upper(), font=title_font, fill="#f1c40f", anchor="mm")
+    draw.text((width//2, 22), nome_time.upper(), font=title_font, fill="#f1c40f", anchor="mm")
     
     total_overall = 0
     total_value = 0
     
     for i, player in enumerate(team_players):
         cx, cy = POSITIONS_COORDS[i]
-        cw, ch = 60, 80
+        cw, ch = 54, 84
         card_box = [cx - cw//2, cy - ch//2, cx + cw//2, cy + ch//2]
         
         if player:
@@ -415,34 +418,34 @@ def create_team_image_sync(team_players, club_name):
             total_overall += eff_ovr
             total_value += player['value']
             
-            if eff_ovr >= 90: card_bg = (30, 10, 45, 240); border = "#e74c3c" 
-            elif eff_ovr >= 80: card_bg = (25, 25, 25, 240); border = "#f1c40f" 
-            elif eff_ovr >= 70: card_bg = (40, 40, 40, 240); border = "#bdc3c7" 
-            else: card_bg = (55, 35, 25, 240); border = "#cd7f32" 
+            if eff_ovr >= 90: card_bg = (45, 10, 60, 240); border = "#e74c3c" 
+            elif eff_ovr >= 80: card_bg = (30, 30, 30, 240); border = "#f1c40f" 
+            elif eff_ovr >= 70: card_bg = (50, 50, 50, 240); border = "#bdc3c7" 
+            else: card_bg = (60, 40, 30, 240); border = "#cd7f32" 
             
-            draw.rounded_rectangle(card_box, radius=6, fill=card_bg, outline=border, width=2)
+            draw.rounded_rectangle(card_box, radius=5, fill=card_bg, outline=border, width=2)
             
             try:
                 p_img_res = requests.get(player["image"], timeout=3)
                 p_img = Image.open(BytesIO(p_img_res.content)).convert("RGBA")
-                p_img.thumbnail((40, 40), Image.Resampling.LANCZOS)
-                field_img.paste(p_img, (int(cx - p_img.width//2), int(cy - 25)), p_img)
+                p_img.thumbnail((44, 44), Image.Resampling.LANCZOS)
+                field_img.paste(p_img, (int(cx - p_img.width//2), int(cy - 30)), p_img)
             except: 
                 pass
             
             disp_name = player.get('nickname') or player['name'].split(' ')[-1]
-            disp_name = disp_name[:12] 
+            disp_name = disp_name[:11] 
             
-            draw.rounded_rectangle([cx - cw//2 + 3, cy + 22, cx + cw//2 - 3, cy + 35], radius=3, fill=(0,0,0,200))
+            draw.rounded_rectangle([cx - cw//2 + 2, cy + 20, cx + cw//2 - 2, cy + 36], radius=2, fill=(0,0,0,180))
             draw.text((cx, cy + 28), disp_name.upper(), font=name_font, fill="white", anchor="mm") 
-            draw.text((cx - cw//2 + 6, cy - ch//2 + 6), player['position'], font=pos_font, fill=border, anchor="la") 
-            draw.text((cx + cw//2 - 6, cy - ch//2 + 5), str(eff_ovr), font=overall_font, fill=border, anchor="ra") 
+            draw.text((cx - cw//2 + 5, cy - ch//2 + 5), player['position'], font=pos_font, fill=border, anchor="la") 
+            draw.text((cx + cw//2 - 4, cy - ch//2 + 4), str(eff_ovr), font=overall_font, fill=border, anchor="ra") 
         else:
-            draw.rounded_rectangle(card_box, radius=6, fill=(0,0,0,120), outline=(255,255,255,60), width=1)
-            draw.text((cx, cy), "➕", font=title_font, fill=(255,255,255,80), anchor="mm")
+            draw.rounded_rectangle(card_box, radius=5, fill=(0,0,0,100), outline=(255,255,255,50), width=2)
+            draw.text((cx, cy), "+", font=title_font, fill=(255,255,255,100), anchor="mm")
 
-    draw.text((15, height - 15), f"⭐ OVR: {total_overall}", font=stat_font, fill="#f1c40f", anchor="lm")
-    draw.text((width - 15, height - 15), f"💰 R$ {total_value:,}", font=stat_font, fill="#2ecc71", anchor="rm")
+    draw.text((15, height - 17), f"⭐ OVR: {total_overall}", font=stat_font, fill="#f1c40f", anchor="lm")
+    draw.text((width - 15, height - 17), f"💰 R$ {total_value:,}", font=stat_font, fill="#2ecc71", anchor="rm")
     
     buffer = BytesIO()
     field_img.save(buffer, format='PNG', optimize=True)
@@ -503,7 +506,6 @@ class KeepOrSellView(discord.ui.View):
             await save_user_data(self.author.id, u)
         await inter.response.edit_message(content=f"💰 Vendido por **R$ {p:,}**.", embed=None, view=None)
 
-# PAGINADOR UNIVERSAL (Mercado, Venda, Escalação)
 class ActionView(discord.ui.View):
     def __init__(self, ctx, res, action_type, user_data):
         super().__init__(timeout=120)
@@ -921,7 +923,7 @@ async def help_cmd(ctx):
     emb.add_field(name="📋 Vestiário & Tática", value="`--elenco`, `--escalar`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 30.7 - Desenvolvido para a comunidade LTPS")
+    emb.set_footer(text="Versão 30.9 - Desenvolvido para a comunidade LTPS")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
