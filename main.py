@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 30.6 (A MURALHA INQUEBRÁVEL - PAGINAÇÃO & EMBEDS PRO)
+EFL Guru - Versão 30.7 (A MURALHA INQUEBRÁVEL - CARDS ULTRA PRO)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Sem otimizações, mantendo toda a base original.
 - SINTAXE E WEB SERVER: Flask integrado para UptimeRobot na Render.
-- AJUSTE DE NOMES: Fonte adaptável que diminui para caber no card.
+- AJUSTE DE NOMES: Fonte adaptável que diminui para caber no card (TAMANHO MAX).
+- VISUAL DO CARD: Fundo em gradiente, fontes ampliadas e Fade (atenuar) no jogador.
 - FORMATO 6v6: Prancheta reduzida para 6 slots.
 - POSIÇÕES OFICIAIS: GK, CB, MCD, MC, MCO, ST.
 - BULK ADD: Comando --bulkadd via arquivo .txt (NOVO FORMATO: Nick OVR Pos)
 - ADMINISTRAÇÃO: --lock, --unlock, --addplayer, --editplayer.
 - JOGABILIDADE: --confrontar (exige 6 titulares), --ranking, --team.
 - ECONOMIA E GESTÃO: --cofre, --donate, --contratar, --sell, --elenco.
-- [NOVO] PAGINAÇÃO PRO: Embeds detalhados com navegação visual para 
-  mercado, venda e escalação.
+- PAGINAÇÃO PRO: Embeds detalhados com navegação visual.
 ----------------------------------------------------------------------
 """
 
@@ -136,57 +136,111 @@ ACHIEVEMENTS = {
     "primeira_vitoria": {"name": "Primeira Vitória", "desc": "Vença sua primeira partida na EFL.", "emoji": "🏆"}
 }
 
-# --- 3. MOTOR GRÁFICO (CARD RENDER + AJUSTE DE NOME) ---
+# --- 3. MOTOR GRÁFICO (CARD RENDER + AJUSTE DE NOME E FADE) ---
 
 def render_single_card_sync(player):
+    """Gera uma imagem de card individual estilo EA FC com fade na imagem e fontes maiores"""
     c_w, c_h = 300, 450
     card = Image.new("RGBA", (c_w, c_h), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(card)
-
+    
     ovr = player.get('overall', 60)
     
+    # Cores por raridade (Cor Topo, Cor Base, Borda e Texto)
     if ovr >= 90: # Special
-        base_color = (45, 10, 60); border_color = "#f1c40f"; txt_color = "#f1c40f"
+        c_top = (70, 15, 90); c_bot = (30, 5, 40); border_color = "#f39c12"; txt_color = "#f1c40f"
     elif ovr >= 80: # Gold
-        base_color = (25, 25, 25); border_color = "#f1c40f"; txt_color = "white"
+        c_top = (60, 50, 20); c_bot = (20, 18, 5); border_color = "#f1c40f"; txt_color = "white"
     elif ovr >= 75: # Prata
-        base_color = (40, 40, 40); border_color = "#bdc3c7"; txt_color = "white"
+        c_top = (85, 85, 85); c_bot = (30, 30, 30); border_color = "#bdc3c7"; txt_color = "white"
     else: # Bronze
-        base_color = (50, 35, 25); border_color = "#cd7f32"; txt_color = "white"
+        c_top = (100, 70, 45); c_bot = (40, 25, 15); border_color = "#cd7f32"; txt_color = "white"
 
-    draw.rounded_rectangle([5, 5, c_w-5, c_h-5], radius=30, fill=base_color, outline=border_color, width=7)
+    # 1. Fundo com Gradiente
+    bg_img = Image.new("RGBA", (c_w, c_h))
+    draw_bg = ImageDraw.Draw(bg_img)
+    for y in range(c_h):
+        r = int(c_top[0] + (c_bot[0] - c_top[0]) * (y / c_h))
+        g = int(c_top[1] + (c_bot[1] - c_top[1]) * (y / c_h))
+        b = int(c_top[2] + (c_bot[2] - c_top[2]) * (y / c_h))
+        draw_bg.line([(0, y), (c_w, y)], fill=(r, g, b, 255))
+        
+    # Adicionar alguns detalhes de fundo (linhas geométricas sutis)
+    draw_bg.line([(0, 150), (c_w, 100)], fill=(255, 255, 255, 15), width=40)
+    draw_bg.line([(0, 300), (c_w, 250)], fill=(255, 255, 255, 10), width=60)
+
+    # Máscara de borda arredondada
+    mask = Image.new("L", (c_w, c_h), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([5, 5, c_w-5, c_h-5], radius=25, fill=255)
+    card.paste(bg_img, (0, 0), mask)
     
+    draw = ImageDraw.Draw(card)
+    # Borda externa
+    draw.rounded_rectangle([5, 5, c_w-5, c_h-5], radius=25, outline=border_color, width=6)
+    
+    # 2. Foto do Roblox com Efeito Atenuar (Fade)
     try:
         p_img_res = requests.get(player["image"], timeout=3)
         p_img = Image.open(BytesIO(p_img_res.content)).convert("RGBA")
-        p_img = p_img.resize((230, 230), Image.Resampling.LANCZOS)
-        card.paste(p_img, (int(c_w/2 - 115), 75), p_img)
-    except:
+        p_img = p_img.resize((240, 240), Image.Resampling.LANCZOS)
+        
+        # Criando o Fade (Alpha Channel)
+        r_c, g_c, b_c, a_c = p_img.split()
+        fade = Image.new("L", (1, p_img.height))
+        for y in range(p_img.height):
+            if y < p_img.height * 0.60: # 60% superior da imagem fica totalmente visível
+                fade.putpixel((0, y), 255)
+            else: # 40% inferior vai esmaecendo
+                alpha = int(255 * (1.0 - (y - p_img.height * 0.60) / (p_img.height * 0.40)))
+                fade.putpixel((0, y), max(0, min(255, alpha)))
+        
+        fade = fade.resize(p_img.size)
+        
+        # Mesclando transparência original com o efeito de fade
+        a_data = a_c.load()
+        f_data = fade.load()
+        for y in range(p_img.height):
+            for x in range(p_img.width):
+                a_data[x, y] = int((a_data[x, y] * f_data[x, y]) / 255)
+        
+        p_img = Image.merge("RGBA", (r_c, g_c, b_c, a_c))
+        
+        # Centralizando um pouco mais abaixo para encaixar com as fontes maiores
+        card.paste(p_img, (int(c_w/2 - 120), 80), p_img)
+    except Exception:
         pass
 
+    # 3. Fontes Maiores para OVR e POS
     try:
-        f_ovr = ImageFont.truetype("arialbd.ttf", 65)
-        f_pos = ImageFont.truetype("arialbd.ttf", 32)
+        f_ovr = ImageFont.truetype("arialbd.ttf", 85) # OVR Bem maior
+        f_pos = ImageFont.truetype("arialbd.ttf", 40) # Posição maior
     except:
         f_ovr = f_pos = ImageFont.load_default()
 
-    draw.text((35, 45), str(ovr), font=f_ovr, fill=border_color, anchor="la")
-    draw.text((35, 115), player['position'], font=f_pos, fill="white", anchor="la")
+    # Escrevendo OVR e Posição
+    draw.text((35, 40), str(ovr), font=f_ovr, fill=border_color, anchor="la")
+    draw.text((35, 125), player['position'], font=f_pos, fill="white", anchor="la")
     
+    # Linha separadora elegante abaixo do jogador
+    draw.line([40, 310, c_w-40, 310], fill=border_color, width=2)
+    
+    # 4. Nome Dinâmico, Maximizado e Centralizado
     nome_cru = player['name'].split()[-1].upper()
-    max_text_width = c_w - 60
-    current_font_size = 38
+    max_text_width = c_w - 40
+    current_font_size = 50 # Tamanho base gigante
     
     try:
         f_name = ImageFont.truetype("arialbd.ttf", current_font_size)
-        while f_name.getlength(nome_cru) > max_text_width and current_font_size > 16:
+        # Reduz até caber no layout do card
+        while f_name.getlength(nome_cru) > max_text_width and current_font_size > 18:
             current_font_size -= 2
             f_name = ImageFont.truetype("arialbd.ttf", current_font_size)
     except:
         f_name = ImageFont.load_default()
 
-    draw.text((c_w/2, 355), nome_cru, font=f_name, fill=txt_color, anchor="mm")
-    draw.line([c_w/2 - 70, 385, c_w/2 + 70, 385], fill=border_color, width=4)
+    draw.text((c_w/2, 345), nome_cru, font=f_name, fill=txt_color, anchor="mm")
+    
+    # Linha decorativa na base
+    draw.line([c_w/2 - 50, 385, c_w/2 + 50, 385], fill=border_color, width=4)
 
     buf = BytesIO()
     card.save(buf, format='PNG')
@@ -867,7 +921,7 @@ async def help_cmd(ctx):
     emb.add_field(name="📋 Vestiário & Tática", value="`--elenco`, `--escalar`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 30.6 - Desenvolvido para a comunidade LTPS")
+    emb.set_footer(text="Versão 30.7 - Desenvolvido para a comunidade LTPS")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
