@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 30.10 (A MURALHA INQUEBRÁVEL - DELPLAYER ADICIONADO)
+EFL Guru - Versão 30.12 (A MURALHA INQUEBRÁVEL - MATCH ENGINE PRO)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Sem otimizações, mantendo toda a base original.
 - SINTAXE E WEB SERVER: Flask integrado para UptimeRobot na Render.
@@ -11,8 +11,11 @@ EFL Guru - Versão 30.10 (A MURALHA INQUEBRÁVEL - DELPLAYER ADICIONADO)
 - VISUAL DO TIME: Formação 6v6 usando a fonte baixada para máxima qualidade.
 - BULK ADD: Comando --bulkadd via arquivo .txt (NOVO FORMATO: Nick OVR Pos)
 - ADMINISTRAÇÃO: --lock, --unlock, --addplayer, --editplayer, --delplayer.
-- JOGABILIDADE: --confrontar (exige 6 titulares), --ranking, --team.
+- [NOVO] CONFRONTAR 2.0: Convite para aceitar/recusar, tempo aleatório (+4 a +12 min),
+  intervalo de meio tempo, eventos de trave, faltas, cartões e construção de jogadas.
 - ECONOMIA E GESTÃO: --cofre, --donate, --contratar, --sell, --elenco.
+- SISTEMA OBTER: Drop rate baseado em OVR (60% Bronze, 25% Prata, 12% Ouro, 3% Lendário).
+- SUBSTITUIÇÃO: Comando --banco para tirar jogador da equipe titular.
 - PAGINAÇÃO PRO: Embeds detalhados com navegação visual.
 ----------------------------------------------------------------------
 """
@@ -122,32 +125,51 @@ bot = commands.Bot(
     chunk_guilds_at_startup=True
 )
 
-# --- 2. SISTEMAS DE TEXTOS (NARRAÇÃO E CONQUISTAS) ---
+# --- 2. SISTEMAS DE TEXTOS (NARRAÇÃO E EVENTOS DA PARTIDA) ---
 GOAL_NARRATIONS = [
-    "⚽ GOOOOLAAAAÇO! {attacker} mandou uma bomba do meio da rua! Onde a coruja dorme!",
-    "⚽ É REDE! {attacker} dribla a zaga inteira, deixa o goleiro no chão e empurra pro gol vazio!",
-    "⚽ GOOOOL! {attacker} recebe cruzamento perfeito na medida e testa firme pro fundo do barbante!",
-    "⚽ PINTURA! {attacker} domina no peito e manda de voleio!",
-    "⚽ TÁ LÁ DENTRO! {attacker} não desperdiça a chance e guarda no cantinho!",
-    "⚽ QUE CATEGORIA! {attacker} toca por cobertura e faz um gol de placa!",
-    "⚽ EXPLODE A TORCIDA! {attacker} soltou uma pancada e a bola estufa a rede!",
-    "⚽ O NOME DELE É O GOL! {attacker} aparece livre na área e confere!",
-    "⚽ SEM CHANCES! {attacker} acerta um chute seco, a bola ainda bate na trave antes de entrar!",
-    "⚽ NO ÂNGULO! {attacker} soltou o pé e ela entrou onde a coruja dorme!",
-    "⚽ PREDADOR DA ÁREA! {attacker} aproveita a falha da zaga e manda pra rede!"
+    "⚽ **GOOOOLAAAAÇO!** {attacker} mandou uma bomba do meio da rua! Onde a coruja dorme!",
+    "⚽ **É REDE!** {attacker} dribla a zaga inteira, deixa o goleiro no chão e empurra pro gol vazio!",
+    "⚽ **GOOOOL!** {attacker} recebe cruzamento perfeito na medida e testa firme pro fundo do barbante!",
+    "⚽ **PINTURA!** {attacker} domina no peito na entrada da área e emenda um lindo voleio!",
+    "⚽ **TÁ LÁ DENTRO!** {attacker} sai cara a cara, não desperdiça a chance e guarda no cantinho!",
+    "⚽ **QUE CATEGORIA!** {attacker} percebe o goleiro adiantado, toca por cobertura e faz um gol de placa!",
+    "⚽ **EXPLODE A TORCIDA!** {attacker} pegou o rebote de primeira, a bola estufa a rede!",
+    "⚽ **O NOME DELE É O GOL!** {attacker} aparece livre na pequena área e só tem o trabalho de conferir!",
+    "⚽ **SEM CHANCES!** {attacker} acerta um chute seco, a bola ainda bate na trave antes de entrar!",
+    "⚽ **NO ÂNGULO!** {attacker} soltou o pé e ela entrou no ângulo oposto!",
+    "⚽ **PREDADOR DA ÁREA!** {attacker} aproveita a falha grave da zaga, rouba a bola e manda pra rede!"
 ]
 
 SAVE_NARRATIONS = [
-    "🧤 MILAAAAGRE! {keeper} voa como um gato no ângulo e espalma para escanteio!",
-    "🧤 INCRÍVEL! {keeper} salva no puro reflexo com a ponta da chuteira! Que defesa!",
-    "🧱 PAREDE! {keeper} fecha o ângulo, cresce pra cima do {attacker} e defende com o peito!",
-    "🧤 SEGURO! {keeper} cai no canto certinho e encaixa a bola sem dar rebote.",
-    "🧤 ESPETACULAR! {keeper} busca a bola que tinha endereço certo!",
-    "🧤 MÃO DE FERRO! {keeper} segura o chute potente de {attacker}!",
-    "🧤 GIGANTE! {keeper} sai do gol abafando tudo e impede o grito de gol!",
-    "🧤 DEFESA DE CINEMA! {keeper} se estica todo e manda para fora!",
-    "🧤 ESPALMA POR CIMA! {keeper} evita o gol com um toque sutil!",
-    "🧤 MONSTRUOSO! {keeper} defende o primeiro chute e ainda busca o rebote!"
+    "🧤 **MILAAAAGRE!** {keeper} voa como um gato no ângulo e espalma o chute cruzado para escanteio!",
+    "🧤 **INCRÍVEL!** {keeper} salva no puro reflexo com a ponta da chuteira! Que defesa espetacular!",
+    "🧱 **PAREDE!** {keeper} sai bem do gol, fecha o ângulo, cresce pra cima de {attacker} e defende com o peito!",
+    "🧤 **SEGURO!** {keeper} cai no canto certinho e encaixa a cobrança de falta sem dar rebote.",
+    "🧤 **ESPETACULAR!** {keeper} vai buscar a bola na gaveta que tinha endereço certo!",
+    "🧤 **MÃO DE FERRO!** {keeper} espalma o chute potente de {attacker} e a zaga afasta o perigo!",
+    "🧤 **GIGANTE!** {keeper} sai abafando os pés do atacante e impede o grito de gol!",
+    "🧤 **DEFESA DE CINEMA!** {keeper} se estica todo no contrapé e manda para fora com a ponta dos dedos!"
+]
+
+MISS_NARRATIONS = [
+    "💥 **NA TRAAAAVE!** {attacker} solta um foguete de fora da área que explode no poste superior!",
+    "❌ **PRA FOOORA!** {attacker} tenta tirar demais do goleiro e a bola vai pela linha de fundo.",
+    "😱 **INACREDITÁVEL!** {attacker} recebe na marca do pênalti, livre, e isola a bola pra arquibancada!",
+    "💨 **UHHHH!** {attacker} bate cruzado, rasteiro, e a bola tira tinta da trave e vai pra fora."
+]
+
+FOUL_NARRATIONS = [
+    "🟨 **Cartão amarelo!** Falta dura no meio de campo parando o contra-ataque adversário.",
+    "🛑 **Jogo parado.** O juiz marca falta muito perigosa na entrada da área! Tensão no estádio.",
+    "🤕 **Jogo pegado!** O clima esquenta no campo após uma dividida forte na linha lateral.",
+    "🟨 **Amarelou!** O árbitro não perdoa e mostra o cartão após reclamação acintosa do jogador."
+]
+
+BUILD_NARRATIONS = [
+    "👟 O time troca passes curtos no meio-campo, estudando a defesa adversária com paciência...",
+    "🔄 Posse de bola, tentativa de inversão de jogo que acaba saindo forte demais e sai pela lateral.",
+    "🏃‍♂️ Bela jogada individual na ponta, mas o cruzamento interceptado pela zaga no último segundo.",
+    "🛡️ Jogo truncado no meio de campo. As defesas estão se sobressaindo sobre os ataques."
 ]
 
 ACHIEVEMENTS = {
@@ -157,19 +179,18 @@ ACHIEVEMENTS = {
 # --- 3. MOTOR GRÁFICO (CARD RENDER + AJUSTE DE NOME E FADE) ---
 
 def render_single_card_sync(player):
-    """Gera uma imagem de card individual estilo EA FC com fade e fontes robustas"""
     c_w, c_h = 300, 450
     card = Image.new("RGBA", (c_w, c_h), (0, 0, 0, 0))
     
     ovr = player.get('overall', 60)
     
-    if ovr >= 90: # Special
+    if ovr >= 90:
         c_top = (70, 15, 90); c_bot = (30, 5, 40); border_color = "#f39c12"; txt_color = "#f1c40f"
-    elif ovr >= 80: # Gold
+    elif ovr >= 80:
         c_top = (60, 50, 20); c_bot = (20, 18, 5); border_color = "#f1c40f"; txt_color = "white"
-    elif ovr >= 75: # Prata
+    elif ovr >= 75:
         c_top = (85, 85, 85); c_bot = (30, 30, 30); border_color = "#bdc3c7"; txt_color = "white"
-    else: # Bronze
+    else:
         c_top = (100, 70, 45); c_bot = (40, 25, 15); border_color = "#cd7f32"; txt_color = "white"
 
     bg_img = Image.new("RGBA", (c_w, c_h))
@@ -216,18 +237,14 @@ def render_single_card_sync(player):
     except Exception:
         pass
 
-    # CARREGAMENTO GARANTIDO DA FONTE BAIXADA
     try:
-        f_ovr = ImageFont.truetype(FONT_PATH, 90) # OVR Gigante
-        f_pos = ImageFont.truetype(FONT_PATH, 45) # Posição Gigante
+        f_ovr = ImageFont.truetype(FONT_PATH, 90)
+        f_pos = ImageFont.truetype(FONT_PATH, 45)
     except:
         f_ovr = f_pos = ImageFont.load_default()
 
     draw.text((35, 30), str(ovr), font=f_ovr, fill=border_color, anchor="la")
-    
-    # A posição da Posição também ajustada com a nova fonte
     draw.text((35, 120), player['position'], font=f_pos, fill="white", anchor="la")
-    
     draw.line([40, 310, c_w-40, 310], fill=border_color, width=2)
     
     nome_cru = player['name'].split()[-1].upper()
@@ -250,7 +267,7 @@ def render_single_card_sync(player):
     buf.seek(0)
     return buf
 
-# --- 4. CLASSES DE FORMULÁRIOS (MODALS) ---
+# --- 4. CLASSES DE FORMULÁRIOS E PARTIDA (VIEWS E MODALS) ---
 
 class AddPlayerModal(discord.ui.Modal, title='Definir Status da Carta'):
     def __init__(self, rbx_name, img_url):
@@ -304,6 +321,148 @@ class EditPlayerModal(discord.ui.Modal, title='Editar Atleta'):
             await inter.response.send_message(f"✅ **{self.nick}** atualizado para {o} OVR!")
         except:
             await inter.response.send_message("❌ Erro na edição.", ephemeral=True)
+
+class MatchInviteView(discord.ui.View):
+    def __init__(self, ctx, challenger, opponent, d1, d2):
+        super().__init__(timeout=120)
+        self.ctx = ctx
+        self.challenger = challenger
+        self.opponent = opponent
+        self.d1 = d1
+        self.d2 = d2
+
+    @discord.ui.button(label="Aceitar Desafio", style=discord.ButtonStyle.success, emoji="⚽")
+    async def accept(self, inter: discord.Interaction, btn: discord.ui.Button):
+        if inter.user != self.opponent:
+            return await inter.response.send_message("❌ Apenas o desafiado pode aceitar o convite!", ephemeral=True)
+        
+        await inter.response.defer()
+        
+        # Desativa os botões da view
+        for child in self.children:
+            child.disabled = True
+        await inter.message.edit(content="⏳ Preparando o gramado...", view=self)
+        
+        # Inicia a simulação da partida
+        await simulate_match(self.ctx, self.challenger, self.opponent, self.d1, self.d2, inter.message)
+
+    @discord.ui.button(label="Recusar", style=discord.ButtonStyle.danger, emoji="✖️")
+    async def decline(self, inter: discord.Interaction, btn: discord.ui.Button):
+        if inter.user != self.opponent:
+            return await inter.response.send_message("❌ Apenas o desafiado pode recusar o convite!", ephemeral=True)
+        
+        for child in self.children:
+            child.disabled = True
+        await inter.response.edit_message(content=f"🚫 O desafio foi recusado por {self.opponent.mention}.", view=self)
+
+# --- SISTEMA DE PARTIDA 2.0 (MOTOR DE JOGO DINÂMICO) ---
+async def simulate_match(ctx, challenger, opponent, d1, d2, message):
+    f1 = sum(x['overall'] for x in d1['team'] if x)
+    f2 = sum(x['overall'] for x in d2['team'] if x)
+    
+    # Cálculo de vantagem baseado no OVR do time
+    diff = f1 - f2
+    # Probabilidade base de 50%, ajustada pela diferença (limitado a 20% - 80% pra garantir zebra)
+    prob_t1 = max(20, min(80, 50 + diff))
+
+    s1, s2 = 0, 0
+    minuto_atual = 0
+    meio_tempo_feito = False
+    event_log = ["🎙️ **O juiz apita e a bola está rolando para o jogo 6v6!**"]
+    
+    emb = discord.Embed(title=f"🏟️ LTPS: {challenger.display_name} x {opponent.display_name}", color=discord.Color.blue())
+    
+    while minuto_atual < 90:
+        # Pulo de tempo dinâmico (entre 4 e 13 minutos)
+        salto = random.randint(4, 13)
+        minuto_atual += salto
+        
+        is_intervalo = False
+        
+        # Verificação do intervalo
+        if minuto_atual >= 45 and not meio_tempo_feito:
+            minuto_atual = 45
+            meio_tempo_feito = True
+            is_intervalo = True
+            
+        elif minuto_atual > 90:
+            minuto_atual = 90
+            
+        # Determina quem está atacando neste lance baseado na probabilidade calculada
+        rnd_attack = random.randint(1, 100)
+        if rnd_attack <= prob_t1:
+            team_attack = challenger.display_name
+            team_defend = opponent.display_name
+            players_attack = [p for p in d1['team'] if p]
+            players_defend = [p for p in d2['team'] if p]
+            atacante_id = 1
+        else:
+            team_attack = opponent.display_name
+            team_defend = challenger.display_name
+            players_attack = [p for p in d2['team'] if p]
+            players_defend = [p for p in d1['team'] if p]
+            atacante_id = 2
+
+        # Gerando o evento
+        if is_intervalo:
+            evento_str = f"⏱️ **{minuto_atual}'** - Fim do primeiro tempo! O juiz aponta o centro e as equipes vão para o vestiário."
+        else:
+            event_type = random.randint(1, 100)
+            jogador_ataque = random.choice(players_attack)['name']
+            goleiro_defesa = next((p['name'] for p in players_defend if p['position'] == 'GK'), random.choice(players_defend)['name'])
+            
+            # Pesos de eventos: 18% Gol | 22% Defesa | 25% Trave/Fora | 15% Falta | 20% Construção
+            if event_type <= 18:
+                # GOL
+                evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(GOAL_NARRATIONS).format(attacker=jogador_ataque)
+                if atacante_id == 1: s1 += 1
+                else: s2 += 1
+            elif event_type <= 40:
+                # DEFESA DO GOLEIRO
+                evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(SAVE_NARRATIONS).format(keeper=goleiro_defesa, attacker=jogador_ataque)
+            elif event_type <= 65:
+                # TRAVE OU CHUTE PRA FORA
+                evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(MISS_NARRATIONS).format(attacker=jogador_ataque)
+            elif event_type <= 80:
+                # FALTA OU CARTÃO
+                evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(FOUL_NARRATIONS)
+            else:
+                # TOQUE DE BOLA (CONSTRUÇÃO)
+                evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(BUILD_NARRATIONS)
+
+        # Adiciona evento ao log e limpa os muito antigos pra não poluir
+        event_log.append(evento_str)
+        if len(event_log) > 5:
+            event_log.pop(0)
+            
+        # Atualiza a interface da partida
+        placar = f"## 🔵 {challenger.display_name} {s1} x {s2} {opponent.display_name} 🔴"
+        emb.description = placar + "\n\n" + "\n\n".join(event_log)
+        await message.edit(content="", embed=emb, view=None)
+        
+        # Pausa dramática entre os lances
+        await asyncio.sleep(3.0)
+
+    # FIM DE JOGO E ATUALIZAÇÃO DO SUPABASE
+    if s1 > s2: 
+        d1['wins'] += 1
+        d2['losses'] += 1
+        res = f"Fim de papo! O árbitro encerra a partida e a vitória é do **{challenger.display_name}**!"
+    elif s2 > s1: 
+        d2['wins'] += 1
+        d1['losses'] += 1
+        res = f"Fim de papo! O árbitro encerra a partida e o **{opponent.display_name}** leva a melhor fora de casa!"
+    else: 
+        res = "Fim de jogo! Partida disputada no detalhe que termina em **Empate**!"
+        
+    await save_user_data(challenger.id, d1)
+    await save_user_data(opponent.id, d2)
+    
+    event_log.append(f"🏁 **FIM:** {res}")
+    if len(event_log) > 6: event_log.pop(0)
+    
+    emb.description = f"## 🔵 {challenger.display_name} {s1} x {s2} {opponent.display_name} 🔴\n\n" + "\n\n".join(event_log)
+    await message.edit(embed=emb)
 
 # --- 5. BANCO DE DADOS E FUNÇÕES DE JOGADORES ---
 
@@ -457,7 +616,7 @@ async def generate_team_image(team_players, user):
     club_name = user_data.get('club_name') or f"Clube de {user.display_name}"
     return await asyncio.to_thread(create_team_image_sync, team_players, club_name)
 
-# --- 7. CLASSES DE INTERAÇÃO (VIEWS & PAGINATORS) ---
+# --- 7. PAGINADORES E VIEWS AUXILIARES ---
 
 class AddPlayerView(discord.ui.View):
     def __init__(self, author, rbx, img): 
@@ -641,7 +800,7 @@ class ActionView(discord.ui.View):
                     emb = discord.Embed(title="✅ JOGADOR ESCALADO!", description=f"**{p['name']}** agora é o dono da posição.", color=discord.Color.green())
                     await inter.response.edit_message(embed=emb, attachments=[], view=None)
                 else: 
-                    await inter.response.send_message("❌ Sem vaga livre para essa posição na prancheta 6v6.", ephemeral=True)
+                    await inter.response.send_message("❌ Sem vaga livre para essa posição na prancheta 6v6.\n💡 Dica: Use `--banco <nome>` para tirar alguém e abrir vaga.", ephemeral=True)
 
 # --- 8. EVENTOS DO BOT ---
 
@@ -766,16 +925,13 @@ async def del_player_cmd(ctx, *, nick: str):
             cards = res.data[0]["data"] if res.data else []
 
             original_count = len(cards)
-            # Remove o jogador buscando pelo nome (ignorando maiúsculas e minúsculas)
             cards = [p for p in cards if p['name'].lower() != nick.lower()]
 
             if len(cards) == original_count:
                 return await ctx.send(f"❌ O jogador `{nick}` não foi encontrado no banco de dados do mercado.")
 
-            # Atualiza no Supabase
             supabase.table("jogadores").update({"data": cards}).eq("id", "ROBLOX_CARDS").execute()
             
-            # Atualiza a memória global
             global ALL_PLAYERS
             fetch_and_parse_players()
             
@@ -798,10 +954,28 @@ async def obter_cmd(ctx):
     livres = [p for p in ALL_PLAYERS if p["name"] not in u["contracted_players"]]
     if not livres: 
         return await ctx.send("❌ Mercado vazio!")
-    p = random.choice(livres)
+    
+    # --- SISTEMA DE PROBABILIDADE POR OVR ---
+    pesos = []
+    for p in livres:
+        ovr = p.get('overall', 60)
+        if ovr >= 90: pesos.append(3)      
+        elif ovr >= 80: pesos.append(12)   
+        elif ovr >= 75: pesos.append(25)   
+        else: pesos.append(60)             
+        
+    p = random.choices(livres, weights=pesos, k=1)[0]
+    # ----------------------------------------
+    
     async with image_lock: 
         buf = await asyncio.to_thread(render_single_card_sync, p)
-    await ctx.send(content="🃏 **OLHEIRO:** Você encontrou um talento solto pelo mundo!", file=discord.File(buf, "card.png"), view=KeepOrSellView(ctx.author, p))
+        
+    raridade = "🥉 Bronze"
+    if p.get('overall', 60) >= 90: raridade = "✨ LENDÁRIO"
+    elif p.get('overall', 60) >= 80: raridade = "🥇 Ouro"
+    elif p.get('overall', 60) >= 75: raridade = "🥈 Prata"
+    
+    await ctx.send(content=f"🃏 **OLHEIRO:** Você encontrou um talento **{raridade}** solto pelo mundo!", file=discord.File(buf, "card.png"), view=KeepOrSellView(ctx.author, p))
 
 @bot.command(name='contratar')
 async def contratar_cmd(ctx, *, q: str):
@@ -861,6 +1035,25 @@ async def escalar_cmd(ctx, *, q: str):
     emb, file = await v.update_view()
     await ctx.send(embed=emb, file=file, view=v)
 
+@bot.command(name='banco')
+async def banco_cmd(ctx, *, q: str):
+    sq = normalize_str(q)
+    d = await get_user_data(ctx.author.id)
+    
+    encontrado = False
+    for i, p in enumerate(d['team']):
+        if p and sq in normalize_str(p['name']):
+            nome = p['name']
+            d['team'][i] = None
+            encontrado = True
+            break
+            
+    if encontrado:
+        await save_user_data(ctx.author.id, d)
+        await ctx.send(f"🔄 **{nome}** foi retirado da prancheta e voltou para o banco de reservas! A vaga está livre.")
+    else:
+        await ctx.send("❌ Esse jogador não foi encontrado na sua escalação titular.")
+
 @bot.command(name='elenco')
 async def elenco_cmd(ctx):
     d = await get_user_data(ctx.author.id)
@@ -889,52 +1082,24 @@ async def team_cmd(ctx):
 
 @bot.command(name='confrontar')
 async def confrontar_cmd(ctx, oponente: discord.Member):
-    if ctx.author == oponente or oponente.bot: 
-        return
+    if ctx.author == oponente or oponente.bot:
+        return await ctx.send("❌ Você não pode desafiar a si mesmo ou a um bot!")
+
     d1 = await get_user_data(ctx.author.id)
     d2 = await get_user_data(oponente.id)
-    if None in d1['team'] or None in d2['team']: 
-        return await ctx.send("🚨 Para iniciar a partida, AMBOS os times precisam ter os 6 titulares na prancheta!")
-        
-    s1, s2 = 0, 0
-    log = ["🎙️ **O árbitro apita e rola a bola pro jogo 6v6!**"]
-    emb = discord.Embed(title=f"🏟️ {ctx.author.name} x {oponente.name}", description="0 - 0", color=discord.Color.dark_grey())
-    msg = await ctx.send(embed=emb)
-    
-    for min in [30, 60, 90]:
-        await asyncio.sleep(2.5)
-        f1 = sum(x['overall'] for x in d1['team'] if x)
-        f2 = sum(x['overall'] for x in d2['team'] if x)
-        
-        if f1 + random.randint(0,40) > f2 + random.randint(0,40):
-            at = random.choice([p for p in d1['team'] if p])['name']
-            log.append(f"{min}' " + random.choice(GOAL_NARRATIONS).format(attacker=at))
-            s1 += 1
-        elif f2 + random.randint(0,40) > f1 + random.randint(0,40):
-            at = random.choice([p for p in d2['team'] if p])['name']
-            log.append(f"{min}' " + random.choice(GOAL_NARRATIONS).format(attacker=at))
-            s2 += 1
-        else:
-            gk = random.choice([p for p in d2['team'] if p and p['position'] == 'GK'] or [p for p in d2['team'] if p])['name']
-            log.append(f"{min}' " + random.choice(SAVE_NARRATIONS).format(keeper=gk, attacker="adv"))
-            
-        emb.description = f"### Placar: {s1} - {s2}\n" + "\n".join(log[-3:])
-        await msg.edit(embed=emb)
-        
-    if s1 > s2: 
-        d1['wins'] += 1
-        d2['losses'] += 1
-        res = f"Fim de jogo! Vitória absoluta de **{ctx.author.name}**!"
-    elif s2 > s1: 
-        d2['wins'] += 1
-        d1['losses'] += 1
-        res = f"Fim de jogo! O time de **{oponente.name}** amassa e leva a vitória!"
-    else: 
-        res = "Fim de papo! Jogo muito pegado que termina em Empate!"
-        
-    await save_user_data(ctx.author.id, d1)
-    await save_user_data(oponente.id, d2)
-    await ctx.send(f"🏁 **FIM:** {res}")
+
+    if None in d1['team']:
+        return await ctx.send(f"🚨 Sua prancheta está incompleta! Você precisa escalar os 6 titulares para jogar.")
+    if None in d2['team']:
+        return await ctx.send(f"🚨 A prancheta do seu adversário ({oponente.display_name}) está incompleta! Ele precisa escalar os 6 titulares.")
+
+    view = MatchInviteView(ctx, ctx.author, oponente, d1, d2)
+    emb = discord.Embed(
+        title="⚔️ NOVO DESAFIO NA MESA!",
+        description=f"{oponente.mention}, o manager **{ctx.author.display_name}** está chamando sua equipe para um confronto 6v6!\n\nVocê aceita o desafio?",
+        color=discord.Color.orange()
+    )
+    await ctx.send(content=oponente.mention, embed=emb, view=view)
 
 @bot.command(name='ranking')
 async def ranking_cmd(ctx):
@@ -947,10 +1112,10 @@ async def ranking_cmd(ctx):
 async def help_cmd(ctx):
     emb = discord.Embed(title="📜 Painel de Ajuda", description="Seja bem-vindo ao mercado EFL Pro! Abaixo estão os comandos disponíveis:", color=discord.Color.gold())
     emb.add_field(name="💰 Gestão & Economia", value="`--cofre`, `--donate`, `--contratar`, `--sell`, `--obter`", inline=False)
-    emb.add_field(name="📋 Vestiário & Tática", value="`--elenco`, `--escalar`, `--team` ", inline=False)
+    emb.add_field(name="📋 Vestiário & Tática", value="`--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 30.10 - Desenvolvido para a comunidade LTPS")
+    emb.set_footer(text="Versão 30.12 - Desenvolvido para a comunidade LTPS") # Usando LTPS como você instruiu antes
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
