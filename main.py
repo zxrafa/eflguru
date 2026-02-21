@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 31.5 (A MURALHA INQUEBRÁVEL - CÓDIGO ORIGINAL EXPANDIDO)
+EFL Guru - Versão 31.6 (A MURALHA INQUEBRÁVEL - TÁTICA ATUALIZADA)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Formatação original preservada. NENHUMA linha comprimida.
-- 11v11 (4-3-3): Prancheta ajustada mantendo o seu design de mini-cards.
-- NOVAS SIGLAS E AUTO-MIGRAÇÃO: ST -> DC | CB -> DFC | GK -> PO.
+- FORMAÇÃO 4-3-3 RESTRITA: 1 PO, 4 DFC, 3 Meias (MDC, MC, MCO) e 3 DC.
+- MIGRAÇÃO MÁXIMA: Transforma antigos LE/LD em DFC e PE/PD em DC automaticamente.
 - FIX ROBLOX API: Sistema de headers e retry no Bulk Add para não pular cartas.
 - RELATÓRIO BULK ADD: Mostra exatamente o motivo se pular algum jogador.
 - SISTEMA DE OLHEIRO: Cooldown de 15 minutos no --obter com aviso automático.
@@ -80,37 +80,37 @@ def ensure_font_exists():
 
 ensure_font_exists()
 
-# --- MAPEAMENTO 4-3-3 E NOVAS SIGLAS ---
+# --- MAPEAMENTO 4-3-3 ATUALIZADO (PO, 4 DFC, 3 MEIAS, 3 DC) ---
 SLOT_MAPPING = {
     "PO": [0], "GK": [0], "GOL": [0],
-    "LE": [1], "LB": [1],
-    "DFC": [2, 3], "CB": [2, 3], "ZAG": [2, 3],
-    "LD": [4], "RB": [4],
-    "VOL": [5, 6, 7], "MCD": [5, 6, 7], "CDM": [5, 6, 7],
+    "DFC": [1, 2, 3, 4], "CB": [1, 2, 3, 4], "ZAG": [1, 2, 3, 4],
+    "MDC": [5, 6, 7], "MCD": [5, 6, 7], "VOL": [5, 6, 7], "CDM": [5, 6, 7],
     "MC": [5, 6, 7], "CM": [5, 6, 7],
-    "MEI": [5, 6, 7], "MCO": [5, 6, 7], "CAM": [5, 6, 7],
-    "PE": [8, 10], "LW": [8], "LF": [8],
-    "DC": [9], "ST": [9], "CA": [9],
-    "PD": [8, 10], "RW": [10], "RF": [10]
+    "MCO": [5, 6, 7], "MEI": [5, 6, 7], "CAM": [5, 6, 7],
+    "DC": [8, 9, 10], "ST": [8, 9, 10], "CA": [8, 9, 10], "ATA": [8, 9, 10]
 }
 
-# --- COORDENADAS DA PRANCHETA (4-3-3 Adaptado para 420x550) ---
+# --- COORDENADAS DA PRANCHETA (Ajustadas para alinhar 4 DFCs e 3 DCs) ---
 POSITIONS_COORDS = {
     0: (210, 485),  # PO
-    1: (70, 385),   # LE
-    2: (150, 400),  # DFC 1
-    3: (270, 400),  # DFC 2
-    4: (350, 385),  # LD
-    5: (100, 260),  # MC 1
-    6: (210, 275),  # MC 2
-    7: (320, 260),  # MC 3
-    8: (85, 120),   # PE
-    9: (210, 95),   # DC
-    10: (335, 120)  # PD
+    1: (60, 395),   # DFC 1
+    2: (160, 400),  # DFC 2
+    3: (260, 400),  # DFC 3
+    4: (360, 395),  # DFC 4
+    5: (100, 260),  # MC/MDC/MCO 1
+    6: (210, 275),  # MC/MDC/MCO 2
+    7: (320, 260),  # MC/MDC/MCO 3
+    8: (85, 120),   # DC 1
+    9: (210, 95),   # DC 2
+    10: (335, 120)  # DC 3
 }
 
-# DICIONÁRIO DE ATUALIZAÇÃO AUTOMÁTICA
-POS_MIGRATION = {"ST": "DC", "CA": "DC", "CB": "DFC", "ZAG": "DFC", "GK": "PO", "GOL": "PO"}
+# DICIONÁRIO DE ATUALIZAÇÃO AUTOMÁTICA (Agora converte LE/LD para DFC e PE/PD para DC)
+POS_MIGRATION = {
+    "ST": "DC", "CA": "DC", "PE": "DC", "PD": "DC", "LW": "DC", "RW": "DC", "LF": "DC", "RF": "DC",
+    "CB": "DFC", "ZAG": "DFC", "LE": "DFC", "LD": "DFC", "LB": "DFC", "RB": "DFC",
+    "GK": "PO", "GOL": "PO"
+}
 
 ALL_PLAYERS = []
 data_lock = asyncio.Lock()
@@ -298,7 +298,7 @@ class AddPlayerModal(discord.ui.Modal, title='Definir Status da Carta'):
         super().__init__()
         self.rbx_name, self.img_url = rbx_name, img_url
         self.ovr = discord.ui.TextInput(label='Overall (OVR)', placeholder='85', min_length=1, max_length=2)
-        self.pos = discord.ui.TextInput(label='Posição (PO, DFC, MC, DC...)', placeholder='Ex: DC', min_length=2, max_length=3)
+        self.pos = discord.ui.TextInput(label='Posição (PO, DFC, MDC, MC, MCO, DC)', placeholder='Ex: DC', min_length=2, max_length=3)
         self.add_item(self.ovr)
         self.add_item(self.pos)
 
@@ -511,7 +511,7 @@ def fetch_and_parse_players():
             
             if needs_update:
                 supabase.table("jogadores").update({"data": comunidade}).eq("id", "ROBLOX_CARDS").execute()
-                print("🔄 Mercado atualizado automaticamente com as novas nomenclaturas (PO, DFC, DC).")
+                print("🔄 Mercado atualizado automaticamente com as novas nomenclaturas de posição.")
 
             ALL_PLAYERS.extend(comunidade)
             print(f"✅ {len(comunidade)} Cartas carregadas no Mercado.")
@@ -1253,7 +1253,7 @@ async def help_cmd(ctx):
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 31.5 - Desenvolvido exclusivamente para a EFL")
+    emb.set_footer(text="Versão 31.6 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
