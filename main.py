@@ -1,18 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 30.1 (A MURALHA INQUEBRÁVEL - FIX SINTAXE TOTAL)
+EFL Guru - Versão 30.5 (A MURALHA INQUEBRÁVEL - BULK ADD SEM PONTO E VÍRGULA)
 ----------------------------------------------------------------------
-- CÓDIGO BRUTO: Sem otimizações, mantendo toda a base original de 800+ linhas.
-- SINTAXE: Corrigido erro de ';' antes de 'async with' e 'try'.
+- CÓDIGO BRUTO: Sem otimizações, mantendo toda a base original.
+- SINTAXE E WEB SERVER: Flask integrado para UptimeRobot na Render.
 - AJUSTE DE NOMES: Fonte adaptável que diminui para caber no card.
-- BULK ADD: Comando --bulkadd via arquivo .txt (Nick; Posição; OVR).
-- COMANDO OBTER: Olheiro sorteia cartas com Card Render e Opções.
-- RENDERIZAÇÃO: Cards Pro estilo EA FC 25 e Prancheta Tática Completa.
-- ADMINISTRAÇÃO: --lock, --unlock, --addplayer, --editplayer e --syncroblox.
-- JOGABILIDADE: --confrontar (narração completa), --ranking, --team.
-- ECONOMIA: --saldo, --doar, --contratar, --vender.
-- GESTÃO: --elenco, --escalar.
-- SERVIDOR RENDER (NOVO): Integrado sistema Flask para UptimeRobot.
+- FORMATO 6v6: Prancheta reduzida para 6 slots.
+- POSIÇÕES OFICIAIS: GK, CB, MCD, MC, MCO, ST.
+- BULK ADD: Comando --bulkadd via arquivo .txt (NOVO FORMATO: Nick OVR Pos)
+- ADMINISTRAÇÃO: --lock, --unlock, --addplayer, --editplayer.
+- JOGABILIDADE: --confrontar (exige 6 titulares), --ranking, --team.
+- ECONOMIA E GESTÃO: --saldo, --doar, --contratar, --vender, --elenco.
 ----------------------------------------------------------------------
 """
 
@@ -67,31 +65,24 @@ BOT_PREFIX = "--"
 INITIAL_MONEY = 1000000000
 SALE_PERCENTAGE = 0.5
 
+# --- MAPEAMENTO 6v6 ---
 SLOT_MAPPING = {
-    "GOL": [0], 
-    "ZAG": [1, 2], 
-    "LE": [3], 
-    "LD": [4], 
-    "VOL": [5], 
-    "MC": [6], 
-    "MEI": [7], 
-    "PE": [8], 
-    "PD": [9], 
-    "CA": [10]
+    "GK": [0], 
+    "CB": [1], 
+    "MCD": [2], 
+    "MC": [3], 
+    "MCO": [4], 
+    "ST": [5]
 }
 
+# --- COORDENADAS DA PRANCHETA PARA 6 JOGADORES ---
 POSITIONS_COORDS = {
-    0: (185, 420),  # GOL
-    1: (120, 360),  # ZAG 1
-    2: (250, 360),  # ZAG 2
-    3: (50, 310),   # LE
-    4: (320, 310),  # LD
-    5: (185, 290),  # VOL
-    6: (120, 220),  # MC
-    7: (250, 220),  # MEI
-    8: (60, 130),   # PE
-    9: (310, 130),  # PD
-    10: (185, 90)   # CA
+    0: (185, 420),  # GK (Goleiro)
+    1: (185, 350),  # CB (Zagueiro Central)
+    2: (185, 280),  # MCD (Volante Defensivo)
+    3: (100, 210),  # MC (Meia Central Esquerdo)
+    4: (270, 210),  # MCO (Meia Atacante Direito)
+    5: (185, 110)   # ST (Atacante)
 }
 
 ALL_PLAYERS = []
@@ -218,7 +209,7 @@ class AddPlayerModal(discord.ui.Modal, title='Definir Status da Carta'):
         super().__init__()
         self.rbx_name, self.img_url = rbx_name, img_url
         self.ovr = discord.ui.TextInput(label='Overall (OVR)', placeholder='85', min_length=1, max_length=2)
-        self.pos = discord.ui.TextInput(label='Posição (CA, MC, GOL...)', placeholder='CA', min_length=2, max_length=3)
+        self.pos = discord.ui.TextInput(label='Posição (GK, CB, MCD, MC, MCO, ST)', placeholder='Ex: ST', min_length=2, max_length=3)
         self.add_item(self.ovr)
         self.add_item(self.pos)
 
@@ -227,7 +218,7 @@ class AddPlayerModal(discord.ui.Modal, title='Definir Status da Carta'):
             o_int = int(self.ovr.value)
             p_str = self.pos.value.upper().strip()
             if p_str not in SLOT_MAPPING:
-                return await inter.response.send_message(f"❌ Posição `{p_str}` inválida.", ephemeral=True)
+                return await inter.response.send_message(f"❌ Posição `{p_str}` inválida. Use: GK, CB, MCD, MC, MCO ou ST.", ephemeral=True)
             v_int = o_int * 25000
             new_p = {"name": self.rbx_name, "image": self.img_url, "overall": o_int, "position": p_str, "value": v_int}
             async with data_lock:
@@ -289,7 +280,7 @@ async def get_user_data(user_id):
             initial = {
                 "money": INITIAL_MONEY, 
                 "squad": [], 
-                "team": [None] * 11, 
+                "team": [None] * 6, # Ajustado para 6 posições
                 "wins": 0, 
                 "losses": 0, 
                 "match_history": [], 
@@ -304,6 +295,11 @@ async def get_user_data(user_id):
         for key, val in defaults:
             if key not in data: 
                 data[key] = val
+                
+        # Garante que o time tenha 6 slots (caso venha do sistema antigo de 11)
+        if "team" not in data or len(data["team"]) != 6:
+            data["team"] = [None] * 6
+            
         return data
     except Exception: 
         return None
@@ -353,7 +349,7 @@ async def check_and_grant_achievement(user_id, achievement_id, ctx=None):
                 embed = create_success_embed(f"{ach['emoji']} Conquista: {ach['name']}", ach['desc'], ctx)
                 await ctx.send(embed=embed)
 
-# --- 6. GERADOR DE IMAGEM DA PRANCHETA ---
+# --- 6. GERADOR DE IMAGEM DA PRANCHETA (6v6) ---
 
 def create_team_image_sync(team_players, club_name):
     width, height = 370, 500 
@@ -550,7 +546,7 @@ class ActionView(discord.ui.View):
 async def on_ready():
     print(f'🟢 EFL Guru ONLINE! Todas as linhas carregadas e Render ativado.')
     fetch_and_parse_players()
-    await bot.change_presence(activity=discord.Game(name=f"{BOT_PREFIX}help | EFL Pro"))
+    await bot.change_presence(activity=discord.Game(name=f"{BOT_PREFIX}help | EFL Pro 6v6"))
 
 @bot.check
 async def maintenance_check(ctx):
@@ -626,12 +622,13 @@ async def bulk_add_cmd(ctx):
         names = [p['name'].lower() for p in cards]
         added = []
         for line in lines:
-            if ';' not in line: 
+            parts = line.split()
+            if len(parts) < 3: 
                 continue
-            parts = line.split(';')
+                
             n = parts[0].strip()
-            pos = parts[1].strip().upper()
-            ovr = int(parts[2].strip())
+            ovr = int(parts[1].strip())
+            pos = parts[2].strip().upper()
             
             if n.lower() in names or pos not in SLOT_MAPPING: 
                 continue
@@ -648,7 +645,7 @@ async def bulk_add_cmd(ctx):
             fetch_and_parse_players()
         await status.edit(content=f"✅ Adicionados: **{len(added)}** atletas.")
     except Exception as e: 
-        await status.edit(content=f"❌ Erro: {e}")
+        await status.edit(content=f"❌ Erro no formato. Use: Nick OVR Pos\nDetalhe: {e}")
 
 @bot.command(name='editplayer')
 @commands.has_permissions(administrator=True)
@@ -732,7 +729,7 @@ async def team_cmd(ctx):
     d = await get_user_data(ctx.author.id)
     if not any(d['team']): 
         return await ctx.send("❌ Time vazio.")
-    msg = await ctx.send("⚙️ Desenhando...")
+    msg = await ctx.send("⚙️ Desenhando prancheta 6v6...")
     async with image_lock:
         try:
             buf = await asyncio.to_thread(create_team_image_sync, d['team'], d.get('club_name') or ctx.author.name)
@@ -759,7 +756,7 @@ async def perform_escalar(ctx, j):
         await save_user_data(ctx.author.id, d)
         await ctx.send(f"✅ Escalei **{j['name']}**!")
     else: 
-        await ctx.send("❌ Sem vaga livre.")
+        await ctx.send("❌ Sem vaga livre para essa posição no 6v6.")
 
 @bot.command(name='escalar')
 async def escalar_cmd(ctx, *, q: str):
@@ -789,10 +786,10 @@ async def confrontar_cmd(ctx, oponente: discord.Member):
     d1 = await get_user_data(ctx.author.id)
     d2 = await get_user_data(oponente.id)
     if None in d1['team'] or None in d2['team']: 
-        return await ctx.send("🚨 Precisa de 11 titulares!")
+        return await ctx.send("🚨 A prancheta exige 6 titulares escalados!")
         
     s1, s2 = 0, 0
-    log = ["🎙️ **Início de partida!**"]
+    log = ["🎙️ **Início de partida 6v6!**"]
     emb = discord.Embed(title=f"🏟️ {ctx.author.name} x {oponente.name}", description="0 - 0", color=discord.Color.dark_grey())
     msg = await ctx.send(embed=emb)
     
@@ -810,7 +807,7 @@ async def confrontar_cmd(ctx, oponente: discord.Member):
             log.append(f"{min}' " + random.choice(GOAL_NARRATIONS).format(attacker=at))
             s2 += 1
         else:
-            gk = random.choice([p for p in d2['team'] if p and p['position'] == 'GOL'] or [p for p in d2['team'] if p])['name']
+            gk = random.choice([p for p in d2['team'] if p and p['position'] == 'GK'] or [p for p in d2['team'] if p])['name']
             log.append(f"{min}' " + random.choice(SAVE_NARRATIONS).format(keeper=gk, attacker="adv"))
             
         emb.description = f"### Placar: {s1} - {s2}\n" + "\n".join(log[-3:])
