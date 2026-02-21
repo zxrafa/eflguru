@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 30.17 (A MURALHA INQUEBRÁVEL - TRAVA DE PARTIDA ATIVA)
+EFL Guru - Versão 30.18 (A MURALHA INQUEBRÁVEL - FIX E NOVO DESIGN DA PARTIDA)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Sem otimizações, mantendo toda a base original.
 - SINTAXE E WEB SERVER: Flask integrado para UptimeRobot na Render.
@@ -12,8 +12,9 @@ EFL Guru - Versão 30.17 (A MURALHA INQUEBRÁVEL - TRAVA DE PARTIDA ATIVA)
 - COMANDO DE CLUBE: --clube <Nome> para personalizar o topo da prancheta.
 - AUTO-MIGRAÇÃO: Converte antigos GK, CB e ST para os novos nomes no banco.
 - ADMINISTRAÇÃO: --lock, --unlock, --addplayer, --editplayer, --delplayer.
-- [NOVO] TRAVA DE JOGO: Impede de iniciar ou aceitar partidas se já estiver em campo.
-- CONFRONTAR 2.0: Convite, tempo aleatório, intervalo, eventos dinâmicos.
+- TRAVA DE JOGO: Impede de iniciar ou aceitar partidas se já estiver em campo.
+- [FIX E NOVO DESIGN] CONFRONTAR: Corrigido bug de variável, narrações limpas e
+  adicionada formatação em caixa de código (codeblock) para o feed de lances.
 - IDENTIDADE EFL: Todas as strings, títulos e descrições padronizadas.
 - ECONOMIA E GESTÃO: --cofre, --donate, --contratar, --sell, --elenco, --clube.
 - SISTEMA OBTER: Drop rate baseado em OVR (60% Bronze, 25% Prata, 12% Ouro, 3% Lendário).
@@ -72,7 +73,7 @@ SALE_PERCENTAGE = 0.5
 
 # --- SISTEMA DE FONTE AUTOMÁTICA ---
 FONT_PATH = "EFL_Font.ttf"
-FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Black.ttf"
+FONT_URL = "[https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Black.ttf](https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Black.ttf)"
 
 def ensure_font_exists():
     if not os.path.exists(FONT_PATH):
@@ -128,44 +129,44 @@ bot = commands.Bot(
     chunk_guilds_at_startup=True
 )
 
-# --- 2. SISTEMAS DE TEXTOS (NARRAÇÃO E EVENTOS DA PARTIDA) ---
+# --- 2. SISTEMAS DE TEXTOS (NARRAÇÃO E EVENTOS DA PARTIDA LIMPOS PARA O CODEBLOCK) ---
 GOAL_NARRATIONS = [
-    "⚽ **GOOOOLAAAAÇO!** {attacker} mandou uma bomba do meio da rua! Onde a coruja dorme!",
-    "⚽ **É REDE!** {attacker} dribla a zaga inteira, deixa o goleiro no chão e empurra pro gol vazio!",
-    "⚽ **GOOOOL!** {attacker} recebe cruzamento perfeito na medida e testa firme pro fundo do barbante!",
-    "⚽ **PINTURA!** {attacker} domina no peito na entrada da área e emenda um lindo voleio!",
-    "⚽ **TÁ LÁ DENTRO!** {attacker} sai cara a cara, não desperdiça a chance e guarda no cantinho!",
-    "⚽ **QUE CATEGORIA!** {attacker} percebe o goleiro adiantado, toca por cobertura e faz um gol de placa!",
-    "⚽ **EXPLODE A TORCIDA!** {attacker} pegou o rebote de primeira, a bola estufa a rede!",
-    "⚽ **O NOME DELE É O GOL!** {attacker} aparece livre na pequena área e só tem o trabalho de conferir!",
-    "⚽ **SEM CHANCES!** {attacker} acerta um chute seco, a bola ainda bate na trave antes de entrar!",
-    "⚽ **NO ÂNGULO!** {attacker} soltou o pé e ela entrou no ângulo oposto!",
-    "⚽ **PREDADOR DA ÁREA!** {attacker} aproveita a falha grave da zaga, rouba a bola e manda pra rede!"
+    "⚽ GOOOOLAAAAÇO! {attacker} mandou uma bomba do meio da rua! Onde a coruja dorme!",
+    "⚽ É REDE! {attacker} dribla a zaga inteira, deixa o goleiro no chão e empurra pro gol vazio!",
+    "⚽ GOOOOL! {attacker} recebe cruzamento perfeito na medida e testa firme pro fundo do barbante!",
+    "⚽ PINTURA! {attacker} domina no peito na entrada da área e emenda um lindo voleio!",
+    "⚽ TÁ LÁ DENTRO! {attacker} sai cara a cara, não desperdiça a chance e guarda no cantinho!",
+    "⚽ QUE CATEGORIA! {attacker} percebe o goleiro adiantado, toca por cobertura e faz um gol de placa!",
+    "⚽ EXPLODE A TORCIDA! {attacker} pegou o rebote de primeira, a bola estufa a rede!",
+    "⚽ O NOME DELE É O GOL! {attacker} aparece livre na pequena área e só tem o trabalho de conferir!",
+    "⚽ SEM CHANCES! {attacker} acerta um chute seco, a bola ainda bate na trave antes de entrar!",
+    "⚽ NO ÂNGULO! {attacker} soltou o pé e ela entrou no ângulo oposto!",
+    "⚽ PREDADOR DA ÁREA! {attacker} aproveita a falha grave da zaga, rouba a bola e manda pra rede!"
 ]
 
 SAVE_NARRATIONS = [
-    "🧤 **MILAAAAGRE!** {keeper} voa como um gato no ângulo e espalma o chute cruzado para escanteio!",
-    "🧤 **INCRÍVEL!** {keeper} salva no puro reflexo com a ponta da chuteira! Que defesa espetacular!",
-    "🧱 **PAREDE!** {keeper} sai bem do gol, fecha o ângulo, cresce pra cima de {attacker} e defende com o peito!",
-    "🧤 **SEGURO!** {keeper} cai no canto certinho e encaixa a cobrança de falta sem dar rebote.",
-    "🧤 **ESPETACULAR!** {keeper} vai buscar a bola na gaveta que tinha endereço certo!",
-    "🧤 **MÃO DE FERRO!** {keeper} espalma o chute potente de {attacker} e a zaga afasta o perigo!",
-    "🧤 **GIGANTE!** {keeper} sai abafando os pés do atacante e impede o grito de gol!",
-    "🧤 **DEFESA DE CINEMA!** {keeper} se estica todo no contrapé e manda para fora com a ponta dos dedos!"
+    "🧤 MILAAAAGRE! {keeper} voa como um gato no ângulo e espalma o chute cruzado para escanteio!",
+    "🧤 INCRÍVEL! {keeper} salva no puro reflexo com a ponta da chuteira! Que defesa espetacular!",
+    "🧱 PAREDE! {keeper} sai bem do gol, fecha o ângulo, cresce pra cima de {attacker} e defende com o peito!",
+    "🧤 SEGURO! {keeper} cai no canto certinho e encaixa a cobrança de falta sem dar rebote.",
+    "🧤 ESPETACULAR! {keeper} vai buscar a bola na gaveta que tinha endereço certo!",
+    "🧤 MÃO DE FERRO! {keeper} espalma o chute potente de {attacker} e a zaga afasta o perigo!",
+    "🧤 GIGANTE! {keeper} sai abafando os pés do atacante e impede o grito de gol!",
+    "🧤 DEFESA DE CINEMA! {keeper} se estica todo no contrapé e manda para fora com a ponta dos dedos!"
 ]
 
 MISS_NARRATIONS = [
-    "💥 **NA TRAAAAVE!** {attacker} solta um foguete de fora da área que explode no poste superior!",
-    "❌ **PRA FOOORA!** {attacker} tenta tirar demais do goleiro e a bola vai pela linha de fundo.",
-    "😱 **INACREDITÁVEL!** {attacker} recebe na marca do pênalti, livre, e isola a bola pra arquibancada!",
-    "💨 **UHHHH!** {attacker} bate cruzado, rasteiro, e a bola tira tinta da trave e vai pra fora."
+    "💥 NA TRAAAAVE! {attacker} solta um foguete de fora da área que explode no poste superior!",
+    "❌ PRA FOOORA! {attacker} tenta tirar demais do goleiro e a bola vai pela linha de fundo.",
+    "😱 INACREDITÁVEL! {attacker} recebe na marca do pênalti, livre, e isola a bola pra arquibancada!",
+    "💨 UHHHH! {attacker} bate cruzado, rasteiro, e a bola tira tinta da trave e vai pra fora."
 ]
 
 FOUL_NARRATIONS = [
-    "🟨 **Cartão amarelo!** Falta dura no meio de campo parando o contra-ataque adversário.",
-    "🛑 **Jogo parado.** O juiz marca falta muito perigosa na entrada da área! Tensão no estádio.",
-    "🤕 **Jogo pegado!** O clima esquenta no campo após uma dividida forte na linha lateral.",
-    "🟨 **Amarelou!** O árbitro não perdoa e mostra o cartão após reclamação acintosa do jogador."
+    "🟨 Cartão amarelo! Falta dura no meio de campo parando o contra-ataque adversário.",
+    "🛑 Jogo parado. O juiz marca falta muito perigosa na entrada da área! Tensão no estádio.",
+    "🤕 Jogo pegado! O clima esquenta no campo após uma dividida forte na linha lateral.",
+    "🟨 Amarelou! O árbitro não perdoa e mostra o cartão após reclamação acintosa do jogador."
 ]
 
 BUILD_NARRATIONS = [
@@ -241,9 +242,10 @@ def render_single_card_sync(player):
     except Exception:
         pass
 
+    # CARREGAMENTO GARANTIDO DA FONTE BAIXADA
     try:
-        f_ovr = ImageFont.truetype(FONT_PATH, 90)
-        f_pos = ImageFont.truetype(FONT_PATH, 45)
+        f_ovr = ImageFont.truetype(FONT_PATH, 90) # OVR Gigante
+        f_pos = ImageFont.truetype(FONT_PATH, 45) # Posição Gigante
     except:
         f_ovr = f_pos = ImageFont.load_default()
 
@@ -366,7 +368,7 @@ class MatchInviteView(discord.ui.View):
             child.disabled = True
         await inter.response.edit_message(content=f"🚫 O desafio da EFL foi recusado por {self.opponent.mention}.", view=self)
 
-# --- SISTEMA DE PARTIDA 2.0 (MOTOR DE JOGO DINÂMICO COM TRAVA) ---
+# --- SISTEMA DE PARTIDA 2.0 (MOTOR DE JOGO COM CAIXA DE CÓDIGO) ---
 async def simulate_match(ctx, challenger, opponent, d1, d2, message):
     try:
         f1 = sum(x['overall'] for x in d1['team'] if x)
@@ -378,7 +380,9 @@ async def simulate_match(ctx, challenger, opponent, d1, d2, message):
         s1, s2 = 0, 0
         minuto_atual = 0
         meio_tempo_feito = False
-        event_log = ["🎙️ **O juiz apita e a bola está rolando para o jogo 6v6 da EFL!**"]
+        
+        # Log de eventos adaptado para plain text para ficar bonito no code block
+        event_log = ["🎙️ O juiz apita e a bola está rolando para o jogo 6v6 da EFL!"]
         
         emb = discord.Embed(title=f"🏟️ EFL: {challenger.display_name} x {opponent.display_name}", color=discord.Color.blue())
         
@@ -411,31 +415,34 @@ async def simulate_match(ctx, challenger, opponent, d1, d2, message):
                 atacante_id = 2
 
             if is_intervalo:
-                evento_str = f"⏱️ **{minuto_atual}'** - Intervalo na EFL! Fim do primeiro tempo. O juiz aponta o centro e as equipes vão para o vestiário."
+                evento_str = f"[{minuto_atual}'] ⏱️ Intervalo na EFL! Fim do primeiro tempo. O juiz aponta o centro e as equipes vão para o vestiário."
             else:
                 event_type = random.randint(1, 100)
                 jogador_ataque = random.choice(players_attack)['name']
                 goleiro_defesa = next((p['name'] for p in players_defend if p['position'] == 'PO'), random.choice(players_defend)['name'])
                 
                 if event_type <= 18:
-                    evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(GOAL_NARRATIONS).format(attacker=jogador_ataque)
+                    evento_str = f"[{minuto_atual}'] " + random.choice(GOAL_NARRATIONS).format(attacker=jogador_ataque)
                     if atacante_id == 1: s1 += 1
                     else: s2 += 1
                 elif event_type <= 40:
-                    evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(SAVE_NARRATIONS).format(keeper=goleiro_defesa, attacker=jogador_ataque)
+                    evento_str = f"[{minuto_atual}'] " + random.choice(SAVE_NARRATIONS).format(keeper=goleiro_defesa, attacker=jogador_ataque)
                 elif event_type <= 65:
-                    evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(MISS_NARRATIONS).format(attacker=jogador_ataque)
+                    evento_str = f"[{minuto_atual}'] " + random.choice(MISS_NARRATIONS).format(attacker=jogador_ataque)
                 elif event_type <= 80:
-                    evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(FOUL_NARRATIONS)
+                    evento_str = f"[{minuto_atual}'] " + random.choice(FOUL_NARRATIONS)
                 else:
-                    evento_str = f"⏱️ **{minuto_atual}'** - " + random.choice(BUILD_NARRATIONS)
+                    evento_str = f"[{minuto_atual}'] " + random.choice(BUILD_NARRATIONS)
 
             event_log.append(evento_str)
-            if len(event_log) > 5:
+            if len(event_log) > 6:
                 event_log.pop(0)
                 
+            log_text = "\n\n".join(event_log)
             placar = f"## 🔵 {challenger.display_name} {s1} x {s2} {opponent.display_name} 🔴"
-            emb.description = placar + "\n\n" + "\n\n".join(event_log)
+            
+            # Formatação em Caixa de Código para os lances
+            emb.description = f"{placar}\n\n**Lances da Partida:**\n```\n{log_text}\n```"
             await message.edit(content="", embed=emb, view=None)
             
             await asyncio.sleep(3.0)
@@ -443,21 +450,22 @@ async def simulate_match(ctx, challenger, opponent, d1, d2, message):
         if s1 > s2: 
             d1['wins'] += 1
             d2['losses'] += 1
-            res = f"Fim de papo na EFL! O árbitro encerra a partida e a vitória é do **{challenger.display_name}**!"
+            res = f"Fim de papo na EFL! O árbitro encerra a partida e a vitória é do {challenger.display_name}!"
         elif s2 > s1: 
             d2['wins'] += 1
             d1['losses'] += 1
-            res = f"Fim de papo na EFL! O árbitro encerra a partida e o **{opponent.display_name}** leva a melhor fora de casa!"
+            res = f"Fim de papo na EFL! O árbitro encerra a partida e o {opponent.display_name} leva a melhor fora de casa!"
         else: 
-            res = "Fim de jogo na EFL! Partida disputada no detalhe que termina em **Empate**!"
+            res = "Fim de jogo na EFL! Partida disputada no detalhe que termina em Empate!"
             
         await save_user_data(challenger.id, d1)
         await save_user_data(opponent.id, d2)
         
-        event_log.append(f"🏁 **FIM:** {res}")
-        if len(event_log) > 6: event_log.pop(0)
+        event_log.append(f"🏁 FIM: {res}")
+        if len(event_log) > 7: event_log.pop(0)
         
-        emb.description = f"## 🔵 {challenger.display_name} {s1} x {s2} {opponent.display_name} 🔴\n\n" + "\n\n".join(event_log)
+        log_text = "\n\n".join(event_log)
+        emb.description = f"## 🔵 {challenger.display_name} {s1} x {s2} {opponent.display_name} 🔴\n\n**Lances da Partida:**\n```\n{log_text}\n```"
         await message.edit(embed=emb)
         
     finally:
@@ -475,6 +483,7 @@ def fetch_and_parse_players():
         if res.data:
             comunidade = res.data[0]["data"]
             
+            # --- AUTO-MIGRAÇÃO SILENCIOSA (BANCO GLOBAL) ---
             needs_update = False
             for p in comunidade:
                 if p.get('position') in ['GK', 'CB', 'ST']:
@@ -484,6 +493,7 @@ def fetch_and_parse_players():
             if needs_update:
                 supabase.table("jogadores").update({"data": comunidade}).eq("id", "ROBLOX_CARDS").execute()
                 print("🔄 Mercado atualizado automaticamente com as novas nomenclaturas (PO, DFC, DC).")
+            # -----------------------------------------------
 
             ALL_PLAYERS.extend(comunidade)
             print(f"✅ {len(comunidade)} Cartas carregadas no Mercado.")
@@ -517,6 +527,7 @@ async def get_user_data(user_id):
         if "team" not in data or len(data["team"]) != 6:
             data["team"] = [None] * 6
 
+        # --- AUTO-MIGRAÇÃO SILENCIOSA (PERFIL DO JOGADOR) ---
         needs_save = False
         for p in data.get('squad', []):
             if p.get('position') in ['GK', 'CB', 'ST']:
@@ -530,6 +541,7 @@ async def get_user_data(user_id):
         if needs_save:
             try: supabase.table("jogadores").update({"data": data}).eq("id", uid).execute()
             except: pass
+        # ----------------------------------------------------
             
         return data
     except Exception: 
@@ -594,6 +606,7 @@ def create_team_image_sync(team_players, club_name):
     
     for i, player in enumerate(team_players):
         cx, cy = POSITIONS_COORDS[i]
+        
         cw, ch = 56, 88
         card_box = [cx - cw//2, cy - ch//2, cx + cw//2, cy + ch//2]
         
@@ -873,10 +886,10 @@ async def unlock_cmd(ctx):
 
 def get_roblox_data_sync(username):
     try:
-        res = requests.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [username]}, timeout=5).json()
+        res = requests.post("[https://users.roblox.com/v1/usernames/users](https://users.roblox.com/v1/usernames/users)", json={"usernames": [username]}, timeout=5).json()
         if not res.get("data"): return None
         uid = res["data"][0]["id"]
-        res2 = requests.get(f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={uid}&size=420x420&format=Png&isCircular=false", timeout=5).json()
+        res2 = requests.get(f"[https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=](https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=){uid}&size=420x420&format=Png&isCircular=false", timeout=5).json()
         return res2["data"][0]["imageUrl"] if res2.get("data") else None
     except: 
         return None
@@ -1132,7 +1145,7 @@ async def confrontar_cmd(ctx, oponente: discord.Member):
         return await ctx.send(f"❌ **{oponente.display_name}** já está em campo disputando uma partida no momento.")
 
     d1 = await get_user_data(ctx.author.id)
-    d2 = await get_user_data(opponente.id)
+    d2 = await get_user_data(oponente.id)
 
     if None in d1['team']:
         return await ctx.send(f"🚨 Sua prancheta está incompleta! Você precisa escalar os 6 titulares para jogar na EFL.")
@@ -1161,7 +1174,7 @@ async def help_cmd(ctx):
     emb.add_field(name="📋 Vestiário & Tática", value="`--clube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 30.17 - Desenvolvido exclusivamente para a EFL")
+    emb.set_footer(text="Versão 30.18 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
