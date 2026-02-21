@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 30.9 (A MURALHA INQUEBRÁVEL - FONTES AUTO-DOWNLOAD FIX)
+EFL Guru - Versão 30.10 (A MURALHA INQUEBRÁVEL - DELPLAYER ADICIONADO)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Sem otimizações, mantendo toda a base original.
 - SINTAXE E WEB SERVER: Flask integrado para UptimeRobot na Render.
@@ -10,7 +10,7 @@ EFL Guru - Versão 30.9 (A MURALHA INQUEBRÁVEL - FONTES AUTO-DOWNLOAD FIX)
 - POSIÇÕES OFICIAIS: GK, CB, MCD, MC, MCO, ST.
 - VISUAL DO TIME: Formação 6v6 usando a fonte baixada para máxima qualidade.
 - BULK ADD: Comando --bulkadd via arquivo .txt (NOVO FORMATO: Nick OVR Pos)
-- ADMINISTRAÇÃO: --lock, --unlock, --addplayer, --editplayer.
+- ADMINISTRAÇÃO: --lock, --unlock, --addplayer, --editplayer, --delplayer.
 - JOGABILIDADE: --confrontar (exige 6 titulares), --ranking, --team.
 - ECONOMIA E GESTÃO: --cofre, --donate, --contratar, --sell, --elenco.
 - PAGINAÇÃO PRO: Embeds detalhados com navegação visual.
@@ -756,6 +756,33 @@ async def edit_player_cmd(ctx, *, nick: str):
     view = EditPlayerView(ctx.author, nick)
     await ctx.send(f"⚙️ Configurações de `{nick}`:", view=view)
 
+@bot.command(name='delplayer')
+@commands.has_permissions(administrator=True)
+async def del_player_cmd(ctx, *, nick: str):
+    """Remove um jogador do banco de dados global permanentemente"""
+    async with data_lock:
+        try:
+            res = supabase.table("jogadores").select("data").eq("id", "ROBLOX_CARDS").execute()
+            cards = res.data[0]["data"] if res.data else []
+
+            original_count = len(cards)
+            # Remove o jogador buscando pelo nome (ignorando maiúsculas e minúsculas)
+            cards = [p for p in cards if p['name'].lower() != nick.lower()]
+
+            if len(cards) == original_count:
+                return await ctx.send(f"❌ O jogador `{nick}` não foi encontrado no banco de dados do mercado.")
+
+            # Atualiza no Supabase
+            supabase.table("jogadores").update({"data": cards}).eq("id", "ROBLOX_CARDS").execute()
+            
+            # Atualiza a memória global
+            global ALL_PLAYERS
+            fetch_and_parse_players()
+            
+            await ctx.send(f"🗑️ ✅ A carta de **{nick}** foi removida permanentemente do mercado global!")
+        except Exception as e:
+            await ctx.send(f"❌ Ocorreu um erro ao tentar deletar o jogador: {e}")
+
 @bot.command(name='syncroblox')
 @commands.has_permissions(administrator=True)
 async def sync_cmd(ctx):
@@ -922,8 +949,8 @@ async def help_cmd(ctx):
     emb.add_field(name="💰 Gestão & Economia", value="`--cofre`, `--donate`, `--contratar`, `--sell`, `--obter`", inline=False)
     emb.add_field(name="📋 Vestiário & Tática", value="`--elenco`, `--escalar`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
-    emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 30.9 - Desenvolvido para a comunidade LTPS")
+    emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
+    emb.set_footer(text="Versão 30.10 - Desenvolvido para a comunidade LTPS")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
