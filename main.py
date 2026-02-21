@@ -10,7 +10,7 @@ EFL Guru - Versão 30.5 (A MURALHA INQUEBRÁVEL - BULK ADD SEM PONTO E VÍRGULA)
 - BULK ADD: Comando --bulkadd via arquivo .txt (NOVO FORMATO: Nick OVR Pos)
 - ADMINISTRAÇÃO: --lock, --unlock, --addplayer, --editplayer.
 - JOGABILIDADE: --confrontar (exige 6 titulares), --ranking, --team.
-- ECONOMIA E GESTÃO: --saldo, --doar, --contratar, --vender, --elenco.
+- ECONOMIA E GESTÃO: --cofre, --donate, --contratar, --sell, --elenco.
 ----------------------------------------------------------------------
 """
 
@@ -688,13 +688,13 @@ async def contratar_cmd(ctx, *, q: str):
     view = BuyPlayerView(ctx.author, p)
     await ctx.send(content=f"🛒 **PREÇO:** R$ **{p['value']:,}**", file=discord.File(buf, "card.png"), view=view)
 
-@bot.command(name='saldo')
-async def saldo_cmd(ctx):
+@bot.command(name='cofre')
+async def cofre_cmd(ctx):
     d = await get_user_data(ctx.author.id)
     await ctx.send(f"🏦 **SALDO:** R$ {d['money']:,}")
 
-@bot.command(name='doar')
-async def doar_cmd(ctx, target: discord.Member, amount: int):
+@bot.command(name='donate')
+async def donate_cmd(ctx, target: discord.Member, amount: int):
     if ctx.author == target or amount <= 0: return
     async with data_lock:
         s_data = await get_user_data(ctx.author.id)
@@ -707,8 +707,8 @@ async def doar_cmd(ctx, target: discord.Member, amount: int):
         await save_user_data(target.id, t_data)
     await ctx.send(f"💸 **TRANSFERÊNCIA:** R$ {amount:,} para {target.display_name}!")
 
-@bot.command(name='vender')
-async def vender_cmd(ctx, *, q: str):
+@bot.command(name='sell')
+async def sell_cmd(ctx, *, q: str):
     sq = normalize_str(q)
     d = await get_user_data(ctx.author.id)
     p = next((x for x in d['squad'] if sq in normalize_str(x['name'])), None)
@@ -838,7 +838,7 @@ async def ranking_cmd(ctx):
 @bot.command(name='help')
 async def help_cmd(ctx):
     emb = discord.Embed(title="📜 Ajuda", color=discord.Color.gold())
-    emb.add_field(name="💰 Economia", value="`saldo`, `doar`, `contratar`, `vender`, `obter`", inline=False)
+    emb.add_field(name="💰 Economia", value="`cofre`, `donate`, `contratar`, `sell`, `obter`", inline=False)
     emb.add_field(name="📋 Vestiário", value="`elenco`, `escalar`, `team` ", inline=False)
     emb.add_field(name="⚽ Partida", value="`confrontar`, `ranking` ")
     emb.add_field(name="⚙️ ADM", value="`addplayer`, `bulkadd`, `editplayer`, `lock`, `unlock` ")
