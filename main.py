@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 31.6 (A MURALHA INQUEBRÁVEL - TÁTICA ATUALIZADA)
+EFL Guru - Versão 31.9 (A MURALHA INQUEBRÁVEL - AUTO-ADD E EDIÇÃO TOTAL)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Formatação original preservada. NENHUMA linha comprimida.
+- TIMEOUT INTELIGENTE: Se não clicar no obter em 60s, o atleta vai pro elenco!
+- AVISO DE COOLDOWN: O bot responde exatamente quantos minutos/segundos faltam.
+- EDITPLAYER TURBINADO: Agora o ADM pode editar o OVR e a POSIÇÃO do jogador.
 - FORMAÇÃO 4-3-3 RESTRITA: 1 PO, 4 DFC, 3 Meias (MDC, MC, MCO) e 3 DC.
 - MIGRAÇÃO MÁXIMA: Transforma antigos LE/LD em DFC e PE/PD em DC automaticamente.
 - FIX ROBLOX API: Sistema de headers e retry no Bulk Add para não pular cartas.
-- RELATÓRIO BULK ADD: Mostra exatamente o motivo se pular algum jogador.
-- SISTEMA DE OLHEIRO: Cooldown de 15 minutos no --obter com aviso automático.
 - GESTÃO DE CLUBE: Comando --setclube <sigla> <nome> para personalizar.
 - PRANCHETA TÁTICA: Mostra [SIGLA] Nome do Time no topo e Cofre na imagem.
-- IDENTIDADE EFL: Mantido o seu design de cards (Fade, Fonte, etc) e Codeblock.
 ----------------------------------------------------------------------
 """
 
@@ -105,7 +105,7 @@ POSITIONS_COORDS = {
     10: (335, 120)  # DC 3
 }
 
-# DICIONÁRIO DE ATUALIZAÇÃO AUTOMÁTICA (Agora converte LE/LD para DFC e PE/PD para DC)
+# DICIONÁRIO DE ATUALIZAÇÃO AUTOMÁTICA
 POS_MIGRATION = {
     "ST": "DC", "CA": "DC", "PE": "DC", "PD": "DC", "LW": "DC", "RW": "DC", "LF": "DC", "RF": "DC",
     "CB": "DFC", "ZAG": "DFC", "LE": "DFC", "LD": "DFC", "LB": "DFC", "RB": "DFC",
@@ -298,7 +298,7 @@ class AddPlayerModal(discord.ui.Modal, title='Definir Status da Carta'):
         super().__init__()
         self.rbx_name, self.img_url = rbx_name, img_url
         self.ovr = discord.ui.TextInput(label='Overall (OVR)', placeholder='85', min_length=1, max_length=2)
-        self.pos = discord.ui.TextInput(label='Posição (PO, DFC, MDC, MC, MCO, DC)', placeholder='Ex: DC', min_length=2, max_length=3)
+        self.pos = discord.ui.TextInput(label='Posição (PO, DFC, MC, DC...)', placeholder='Ex: DC', min_length=2, max_length=3)
         self.add_item(self.ovr)
         self.add_item(self.pos)
 
@@ -334,12 +334,22 @@ class EditPlayerModal(discord.ui.Modal, title='Editar Atleta'):
         super().__init__()
         self.nick = nick
         self.ovr = discord.ui.TextInput(label='Novo Overall (OVR)', placeholder='92', min_length=1, max_length=2)
+        self.pos = discord.ui.TextInput(label='Nova Posição (DC, DFC, PO)', placeholder='Ex: DC', min_length=2, max_length=3)
         self.add_item(self.ovr)
+        self.add_item(self.pos)
         
     async def on_submit(self, inter: discord.Interaction):
         try:
             o = int(self.ovr.value)
             v = o * 25000
+            p_str = self.pos.value.upper().strip()
+            
+            if p_str in POS_MIGRATION:
+                p_str = POS_MIGRATION[p_str]
+                
+            if p_str not in SLOT_MAPPING:
+                return await inter.response.send_message(f"❌ Posição `{p_str}` inválida.", ephemeral=True)
+
             async with data_lock:
                 res = supabase.table("jogadores").select("data").eq("id", "ROBLOX_CARDS").execute()
                 cards = res.data[0]["data"]
@@ -347,10 +357,11 @@ class EditPlayerModal(discord.ui.Modal, title='Editar Atleta'):
                     if p['name'].lower() == self.nick.lower():
                         p['overall'] = o
                         p['value'] = v
+                        p['position'] = p_str
                         break
                 supabase.table("jogadores").update({"data": cards}).eq("id", "ROBLOX_CARDS").execute()
                 fetch_and_parse_players()
-            await inter.response.send_message(f"✅ **{self.nick}** atualizado para {o} OVR!")
+            await inter.response.send_message(f"✅ **{self.nick}** atualizado para {o} OVR e Posição {p_str}!")
         except:
             await inter.response.send_message("❌ Erro na edição.", ephemeral=True)
 
@@ -547,7 +558,6 @@ async def get_user_data(user_id):
             if key not in data: 
                 data[key] = val
                 
-        # Atualiza a prancheta de volta para 11
         if "team" not in data or len(data["team"]) != 11:
             old_team = data.get("team", [])
             new_team = [None] * 11
@@ -555,7 +565,6 @@ async def get_user_data(user_id):
                 if p and idx < 11: new_team[idx] = p
             data["team"] = new_team
 
-        # MIGRAÇÃO AUTOMÁTICA
         needs_save = False
         for p in data.get('squad', []):
             if p.get('position') in POS_MIGRATION:
@@ -706,7 +715,7 @@ class EditPlayerView(discord.ui.View):
         super().__init__(timeout=120)
         self.author, self.nick = author, nick
 
-    @discord.ui.button(label="Editar OVR", style=discord.ButtonStyle.primary, emoji="📝")
+    @discord.ui.button(label="Editar Carta", style=discord.ButtonStyle.primary, emoji="📝")
     async def btn(self, inter, b): 
         if inter.user == self.author: 
             await inter.response.send_modal(EditPlayerModal(self.nick))
@@ -714,11 +723,34 @@ class EditPlayerView(discord.ui.View):
 class KeepOrSellView(discord.ui.View):
     def __init__(self, author, player): 
         super().__init__(timeout=60)
-        self.author, self.player = author, player
+        self.author = author
+        self.player = player
+        self.message = None
+        self.responded = False
+
+    async def on_timeout(self):
+        if self.responded:
+            return
+        
+        async with data_lock:
+            u = await get_user_data(self.author.id)
+            if self.player['name'] not in u["contracted_players"]:
+                u['squad'].append(self.player)
+                u['contracted_players'].append(self.player['name'])
+                await save_user_data(self.author.id, u)
+        
+        if self.message:
+            for child in self.children:
+                child.disabled = True
+            try:
+                await self.message.edit(content=f"⏳ **Tempo esgotado!** O olheiro não podia esperar mais e guardou **{self.player['name']}** automaticamente no seu elenco.", view=self)
+            except:
+                pass
 
     @discord.ui.button(label="Manter no Elenco", style=discord.ButtonStyle.green)
     async def keep(self, inter, btn):
         if inter.user != self.author: return
+        self.responded = True
         async with data_lock:
             u = await get_user_data(self.author.id)
             if self.player['name'] in u["contracted_players"]: 
@@ -726,17 +758,18 @@ class KeepOrSellView(discord.ui.View):
             u['squad'].append(self.player)
             u['contracted_players'].append(self.player['name'])
             await save_user_data(self.author.id, u)
-        await inter.response.edit_message(content=f"✅ **{self.player['name']}** guardado!", embed=None, view=None)
+        await inter.response.edit_message(content=f"✅ **{self.player['name']}** guardado com sucesso!", embed=None, view=None)
 
     @discord.ui.button(label="Vender Rápido", style=discord.ButtonStyle.red)
     async def sell(self, inter, btn):
         if inter.user != self.author: return
+        self.responded = True
         p = int(self.player['value'] * SALE_PERCENTAGE)
         async with data_lock:
             u = await get_user_data(self.author.id)
             u['money'] += p
             await save_user_data(self.author.id, u)
-        await inter.response.edit_message(content=f"💰 Vendido por **R$ {p:,}**.", embed=None, view=None)
+        await inter.response.edit_message(content=f"💰 O atleta foi vendido rapidamente por **R$ {p:,}**.", embed=None, view=None)
 
 class ActionView(discord.ui.View):
     def __init__(self, ctx, res, action_type, user_data):
@@ -896,7 +929,7 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
         minutos = int(error.retry_after // 60)
         segundos = int(error.retry_after % 60)
-        await ctx.send(f"⏳ Calma aí, chefinho! O olheiro está viajando. Tente novamente em **{minutos}m e {segundos}s**.")
+        await ctx.send(f"⏳ **Calma aí, chefinho!** O olheiro está viajando pelo mundo atrás de talentos.\n\nTente usar o comando novamente em **{minutos} minutos e {segundos} segundos**.")
         return
     if isinstance(error, commands.CommandNotFound): return
     if isinstance(error, commands.CheckFailure): return
@@ -1101,7 +1134,10 @@ async def obter_cmd(ctx):
     elif p.get('overall', 60) >= 80: raridade = "🥇 Ouro"
     elif p.get('overall', 60) >= 75: raridade = "🥈 Prata"
     
-    await ctx.send(content=f"🃏 **OLHEIRO DA EFL:** Você encontrou um talento **{raridade}** solto pelo mundo!", file=discord.File(buf, "card.png"), view=KeepOrSellView(ctx.author, p))
+    view = KeepOrSellView(ctx.author, p)
+    msg = await ctx.send(content=f"🃏 **OLHEIRO DA EFL:** Você encontrou um talento **{raridade}** solto pelo mundo!\n*(Você tem 60 segundos para escolher ou ele irá para o seu elenco)*", file=discord.File(buf, "card.png"), view=view)
+    view.message = msg
+    
     bot.loop.create_task(reminder_task(ctx, ctx.author))
 
 @bot.command(name='contratar')
@@ -1253,7 +1289,7 @@ async def help_cmd(ctx):
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 31.6 - Desenvolvido exclusivamente para a EFL")
+    emb.set_footer(text="Versão 31.9 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
