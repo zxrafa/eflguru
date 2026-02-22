@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 31.9 (A MURALHA INQUEBRÁVEL - AUTO-ADD E EDIÇÃO TOTAL)
+EFL Guru - Versão 32.0 (A MURALHA INQUEBRÁVEL - TEAM MANAGER HD)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Formatação original preservada. NENHUMA linha comprimida.
-- TIMEOUT INTELIGENTE: Se não clicar no obter em 60s, o atleta vai pro elenco!
-- AVISO DE COOLDOWN: O bot responde exatamente quantos minutos/segundos faltam.
-- EDITPLAYER TURBINADO: Agora o ADM pode editar o OVR e a POSIÇÃO do jogador.
-- FORMAÇÃO 4-3-3 RESTRITA: 1 PO, 4 DFC, 3 Meias (MDC, MC, MCO) e 3 DC.
-- MIGRAÇÃO MÁXIMA: Transforma antigos LE/LD em DFC e PE/PD em DC automaticamente.
-- FIX ROBLOX API: Sistema de headers e retry no Bulk Add para não pular cartas.
-- GESTÃO DE CLUBE: Comando --setclube <sigla> <nome> para personalizar.
-- PRANCHETA TÁTICA: Mostra [SIGLA] Nome do Time no topo e Cofre na imagem.
+- PRANCHETA HD: Imagem ampliada para 840x1100. Cartas maiores e mais nítidas.
+- TEAM MANAGER: Opções interativas no --team (Mudar Capitão, Tática e Limpar).
+- TÁTICAS DINÂMICAS: Suporte a 4-3-3, 4-4-2 e 3-4-3 com posições atualizadas.
+- AUTO-SYNC GLOBAL: Editar a carta global atualiza o elenco de todos os usuários.
+- COMANDO --JOGADORES: Lista completa de todos os atletas do mercado.
+- TIMEOUT INTELIGENTE: Se não clicar no obter em 60s, o atleta vai pro elenco.
+- AVISO DE COOLDOWN: O bot responde quantos minutos/segundos faltam no olheiro.
+- FIX ROBLOX API: Sistema de headers e retry no Bulk Add.
 ----------------------------------------------------------------------
 """
 
@@ -22,7 +22,6 @@ import random
 import asyncio
 import unicodedata
 import sys
-import gc
 import time
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 from io import BytesIO
@@ -80,32 +79,50 @@ def ensure_font_exists():
 
 ensure_font_exists()
 
-# --- MAPEAMENTO 4-3-3 ATUALIZADO (PO, 4 DFC, 3 MEIAS, 3 DC) ---
-SLOT_MAPPING = {
-    "PO": [0], "GK": [0], "GOL": [0],
-    "DFC": [1, 2, 3, 4], "CB": [1, 2, 3, 4], "ZAG": [1, 2, 3, 4],
-    "MDC": [5, 6, 7], "MCD": [5, 6, 7], "VOL": [5, 6, 7], "CDM": [5, 6, 7],
-    "MC": [5, 6, 7], "CM": [5, 6, 7],
-    "MCO": [5, 6, 7], "MEI": [5, 6, 7], "CAM": [5, 6, 7],
-    "DC": [8, 9, 10], "ST": [8, 9, 10], "CA": [8, 9, 10], "ATA": [8, 9, 10]
-}
+# --- MOTOR TÁTICO DINÂMICO ---
+def get_formation_config(formation):
+    """Retorna as coordenadas HD (x2) e o mapeamento de vagas dependendo da tática"""
+    if formation == "4-4-2":
+        coords = {
+            0: (420, 970),  # PO
+            1: (120, 790), 2: (320, 800), 3: (520, 800), 4: (720, 790),  # 4 DFC
+            5: (150, 520), 6: (330, 550), 7: (510, 550), 8: (690, 520),  # 4 Meias
+            9: (300, 200), 10: (540, 200)  # 2 DC
+        }
+        mapping = {
+            "PO": [0], "GK": [0], "GOL": [0],
+            "DFC": [1, 2, 3, 4], "CB": [1, 2, 3, 4], "ZAG": [1, 2, 3, 4],
+            "MDC": [5, 6, 7, 8], "MC": [5, 6, 7, 8], "MCO": [5, 6, 7, 8], "VOL": [5, 6, 7, 8],
+            "DC": [9, 10], "ST": [9, 10], "CA": [9, 10]
+        }
+    elif formation == "3-4-3":
+        coords = {
+            0: (420, 970),  # PO
+            1: (200, 800), 2: (420, 820), 3: (640, 800),  # 3 DFC
+            4: (150, 520), 5: (330, 550), 6: (510, 550), 7: (690, 520),  # 4 Meias
+            8: (170, 240), 9: (420, 190), 10: (670, 240)  # 3 DC
+        }
+        mapping = {
+            "PO": [0], "GK": [0], "GOL": [0],
+            "DFC": [1, 2, 3], "CB": [1, 2, 3], "ZAG": [1, 2, 3],
+            "MDC": [4, 5, 6, 7], "MC": [4, 5, 6, 7], "MCO": [4, 5, 6, 7], "VOL": [4, 5, 6, 7],
+            "DC": [8, 9, 10], "ST": [8, 9, 10], "CA": [8, 9, 10]
+        }
+    else:  # Padrão: 4-3-3
+        coords = {
+            0: (420, 970),  # PO
+            1: (120, 790), 2: (320, 800), 3: (520, 800), 4: (720, 790),  # 4 DFC
+            5: (200, 520), 6: (420, 550), 7: (640, 520),  # 3 Meias
+            8: (170, 240), 9: (420, 190), 10: (670, 240)  # 3 DC
+        }
+        mapping = {
+            "PO": [0], "GK": [0], "GOL": [0],
+            "DFC": [1, 2, 3, 4], "CB": [1, 2, 3, 4], "ZAG": [1, 2, 3, 4],
+            "MDC": [5, 6, 7], "MC": [5, 6, 7], "MCO": [5, 6, 7], "VOL": [5, 6, 7],
+            "DC": [8, 9, 10], "ST": [8, 9, 10], "CA": [8, 9, 10]
+        }
+    return coords, mapping
 
-# --- COORDENADAS DA PRANCHETA (Ajustadas para alinhar 4 DFCs e 3 DCs) ---
-POSITIONS_COORDS = {
-    0: (210, 485),  # PO
-    1: (60, 395),   # DFC 1
-    2: (160, 400),  # DFC 2
-    3: (260, 400),  # DFC 3
-    4: (360, 395),  # DFC 4
-    5: (100, 260),  # MC/MDC/MCO 1
-    6: (210, 275),  # MC/MDC/MCO 2
-    7: (320, 260),  # MC/MDC/MCO 3
-    8: (85, 120),   # DC 1
-    9: (210, 95),   # DC 2
-    10: (335, 120)  # DC 3
-}
-
-# DICIONÁRIO DE ATUALIZAÇÃO AUTOMÁTICA
 POS_MIGRATION = {
     "ST": "DC", "CA": "DC", "PE": "DC", "PD": "DC", "LW": "DC", "RW": "DC", "LF": "DC", "RF": "DC",
     "CB": "DFC", "ZAG": "DFC", "LE": "DFC", "LD": "DFC", "LB": "DFC", "RB": "DFC",
@@ -117,8 +134,6 @@ data_lock = asyncio.Lock()
 image_lock = asyncio.Lock()
 
 MAINTENANCE_MODE = False
-
-# TRAVA DE JOGADORES EM PARTIDA
 active_matches = set()
 
 intents = discord.Intents.default()
@@ -141,45 +156,29 @@ GOAL_NARRATIONS = [
     "⚽ É REDE! {attacker} dribla a zaga inteira, deixa o goleiro no chão e empurra pro gol vazio!",
     "⚽ GOOOOL! {attacker} recebe cruzamento perfeito na medida e testa firme pro fundo do barbante!",
     "⚽ PINTURA! {attacker} domina no peito na entrada da área e emenda um lindo voleio!",
-    "⚽ TÁ LÁ DENTRO! {attacker} sai cara a cara, não desperdiça a chance e guarda no cantinho!",
-    "⚽ QUE CATEGORIA! {attacker} percebe o goleiro adiantado, toca por cobertura e faz um gol de placa!",
-    "⚽ EXPLODE A TORCIDA! {attacker} pegou o rebote de primeira, a bola estufa a rede!",
-    "⚽ O NOME DELE É O GOL! {attacker} aparece livre na pequena área e só tem o trabalho de conferir!",
-    "⚽ SEM CHANCES! {attacker} acerta um chute seco, a bola ainda bate na trave antes de entrar!",
-    "⚽ NO ÂNGULO! {attacker} soltou o pé e ela entrou no ângulo oposto!",
-    "⚽ PREDADOR DA ÁREA! {attacker} aproveita a falha grave da zaga, rouba a bola e manda pra rede!"
+    "⚽ TÁ LÁ DENTRO! {attacker} sai cara a cara, não desperdiça a chance e guarda no cantinho!"
 ]
 
 SAVE_NARRATIONS = [
     "🧤 MILAAAAGRE! {keeper} voa como um gato no ângulo e espalma o chute cruzado para escanteio!",
     "🧤 INCRÍVEL! {keeper} salva no puro reflexo com a ponta da chuteira! Que defesa espetacular!",
     "🧱 PAREDE! {keeper} sai bem do gol, fecha o ângulo, cresce pra cima de {attacker} e defende com o peito!",
-    "🧤 SEGURO! {keeper} cai no canto certinho e encaixa a cobrança de falta sem dar rebote.",
-    "🧤 ESPETACULAR! {keeper} vai buscar a bola na gaveta que tinha endereço certo!",
-    "🧤 MÃO DE FERRO! {keeper} espalma o chute potente de {attacker} e a zaga afasta o perigo!",
-    "🧤 GIGANTE! {keeper} sai abafando os pés do atacante e impede o grito de gol!",
-    "🧤 DEFESA DE CINEMA! {keeper} se estica todo no contrapé e manda para fora com a ponta dos dedos!"
+    "🧤 SEGURO! {keeper} cai no canto certinho e encaixa a cobrança de falta sem dar rebote."
 ]
 
 MISS_NARRATIONS = [
     "💥 NA TRAAAAVE! {attacker} solta um foguete de fora da área que explode no poste superior!",
-    "❌ PRA FOOORA! {attacker} tenta tirar demais do goleiro e a bola vai pela linha de fundo.",
-    "😱 INACREDITÁVEL! {attacker} recebe na marca do pênalti, livre, e isola a bola pra arquibancada!",
-    "💨 UHHHH! {attacker} bate cruzado, rasteiro, e a bola tira tinta da trave e vai pra fora."
+    "❌ PRA FOOORA! {attacker} tenta tirar demais do goleiro e a bola vai pela linha de fundo."
 ]
 
 FOUL_NARRATIONS = [
     "🟨 Cartão amarelo! Falta dura no meio de campo parando o contra-ataque adversário.",
-    "🛑 Jogo parado. O juiz marca falta muito perigosa na entrada da área! Tensão no estádio.",
-    "🤕 Jogo pegado! O clima esquenta no campo após uma dividida forte na linha lateral.",
-    "🟨 Amarelou! O árbitro não perdoa e mostra o cartão após reclamação acintosa do jogador."
+    "🛑 Jogo parado. O juiz marca falta muito perigosa na entrada da área! Tensão no estádio."
 ]
 
 BUILD_NARRATIONS = [
     "👟 O time troca passes curtos no meio-campo, estudando a defesa adversária com paciência...",
-    "🔄 Posse de bola, tentativa de inversão de jogo que acaba saindo forte demais e sai pela lateral.",
-    "🏃‍♂️ Bela jogada individual na ponta, mas o cruzamento interceptado pela zaga no último segundo.",
-    "🛡️ Jogo truncado no meio de campo. As defesas estão se sobressaindo sobre os ataques."
+    "🔄 Posse de bola, tentativa de inversão de jogo que acaba saindo forte demais e sai pela lateral."
 ]
 
 ACHIEVEMENTS = {
@@ -310,7 +309,8 @@ class AddPlayerModal(discord.ui.Modal, title='Definir Status da Carta'):
             if p_str in POS_MIGRATION:
                 p_str = POS_MIGRATION[p_str]
                 
-            if p_str not in SLOT_MAPPING:
+            coords, mapping = get_formation_config("4-3-3")
+            if p_str not in mapping:
                 return await inter.response.send_message(f"❌ Posição `{p_str}` inválida.", ephemeral=True)
                 
             v_int = o_int * 25000
@@ -347,7 +347,8 @@ class EditPlayerModal(discord.ui.Modal, title='Editar Atleta'):
             if p_str in POS_MIGRATION:
                 p_str = POS_MIGRATION[p_str]
                 
-            if p_str not in SLOT_MAPPING:
+            coords, mapping = get_formation_config("4-3-3")
+            if p_str not in mapping:
                 return await inter.response.send_message(f"❌ Posição `{p_str}` inválida.", ephemeral=True)
 
             async with data_lock:
@@ -361,7 +362,7 @@ class EditPlayerModal(discord.ui.Modal, title='Editar Atleta'):
                         break
                 supabase.table("jogadores").update({"data": cards}).eq("id", "ROBLOX_CARDS").execute()
                 fetch_and_parse_players()
-            await inter.response.send_message(f"✅ **{self.nick}** atualizado para {o} OVR e Posição {p_str}!")
+            await inter.response.send_message(f"✅ **{self.nick}** atualizado para {o} OVR e Posição {p_str}! (A atualização no time dos jogadores ocorrerá automaticamente).")
         except:
             await inter.response.send_message("❌ Erro na edição.", ephemeral=True)
 
@@ -504,7 +505,7 @@ async def simulate_match(ctx, challenger, opponent, d1, d2, message):
         active_matches.discard(challenger.id)
         active_matches.discard(opponent.id)
 
-# --- 5. BANCO DE DADOS E FUNÇÕES DE JOGADORES ---
+# --- 5. BANCO DE DADOS E FUNÇÕES DE JOGADORES (COM AUTO-SYNC GLOBAL) ---
 
 def fetch_and_parse_players():
     global ALL_PLAYERS
@@ -544,7 +545,9 @@ async def get_user_data(user_id):
                 "achievements": [], 
                 "contracted_players": [],
                 "club_name": None,
-                "club_sigla": "EFL"
+                "club_sigla": "EFL",
+                "formation": "4-3-3",
+                "captain": None
             }
             supabase.table("jogadores").insert({"id": uid, "data": initial}).execute()
             return initial
@@ -552,7 +555,8 @@ async def get_user_data(user_id):
         data = res.data[0]["data"]
         defaults = [
             ("losses", 0), ("achievements", []), ("match_history", []), 
-            ("contracted_players", []), ("club_name", None), ("club_sigla", "EFL")
+            ("contracted_players", []), ("club_name", None), ("club_sigla", "EFL"),
+            ("formation", "4-3-3"), ("captain", None)
         ]
         for key, val in defaults:
             if key not in data: 
@@ -565,15 +569,38 @@ async def get_user_data(user_id):
                 if p and idx < 11: new_team[idx] = p
             data["team"] = new_team
 
+        # --- AUTO-SYNC: ATUALIZA AS CARTAS DO USUÁRIO SE O ADM EDITOU NO BANCO GLOBAL ---
+        global ALL_PLAYERS
+        global_dict = {p['name'].lower(): p for p in ALL_PLAYERS}
         needs_save = False
-        for p in data.get('squad', []):
-            if p.get('position') in POS_MIGRATION:
-                p['position'] = POS_MIGRATION[p['position']]
-                needs_save = True
+        
+        for i, p in enumerate(data.get('squad', [])):
+            if p:
+                if p.get('position') in POS_MIGRATION:
+                    p['position'] = POS_MIGRATION[p['position']]
+                    needs_save = True
+                    
+                if p['name'].lower() in global_dict:
+                    gp = global_dict[p['name'].lower()]
+                    if p.get('overall') != gp['overall'] or p.get('position') != gp['position']:
+                        data['squad'][i]['overall'] = gp['overall']
+                        data['squad'][i]['position'] = gp['position']
+                        data['squad'][i]['value'] = gp['value']
+                        needs_save = True
+
         for i, p in enumerate(data.get('team', [])):
-            if p and p.get('position') in POS_MIGRATION:
-                p['position'] = POS_MIGRATION[p['position']]
-                needs_save = True
+            if p:
+                if p.get('position') in POS_MIGRATION:
+                    p['position'] = POS_MIGRATION[p['position']]
+                    needs_save = True
+                    
+                if p['name'].lower() in global_dict:
+                    gp = global_dict[p['name'].lower()]
+                    if p.get('overall') != gp['overall'] or p.get('position') != gp['position']:
+                        data['team'][i]['overall'] = gp['overall']
+                        data['team'][i]['position'] = gp['position']
+                        data['team'][i]['value'] = gp['value']
+                        needs_save = True
                 
         if needs_save:
             try: 
@@ -598,7 +625,7 @@ def get_player_effective_overall(player):
     if not player: 
         return 0
     return player.get('overall', 0) + player.get('training_level', 0)
-    
+
 def add_player_defaults(player):
     if 'nickname' not in player: 
         player['nickname'] = None
@@ -606,45 +633,48 @@ def add_player_defaults(player):
         player['training_level'] = 0
     return player
 
-# --- 6. GERADOR DE IMAGEM DA PRANCHETA (4-3-3 Adaptado para 420x550) ---
+# --- 6. GERADOR DE IMAGEM DA PRANCHETA EM HD (840x1100) ---
 
-def create_team_image_sync(team_players, club_name, club_sigla, user_money):
-    width, height = 420, 550 
+def create_team_image_sync(team_players, club_name, club_sigla, user_money, formation, captain_name):
+    width, height = 840, 1100 
     field_img = Image.new("RGB", (width, height), color="#2E7D32")
     draw = ImageDraw.Draw(field_img, "RGBA")
     
-    for i in range(0, height, 25):
-        if (i // 25) % 2 == 0: 
-            draw.rectangle([0, i, width, i+25], fill="#388E3C")
+    for i in range(0, height, 50):
+        if (i // 50) % 2 == 0: 
+            draw.rectangle([0, i, width, i+50], fill="#388E3C")
             
     line_color = (255, 255, 255, 180)
-    draw.rectangle([10, 10, width-10, height-10], outline=line_color, width=3) 
-    draw.line([10, height//2, width-10, height//2], fill=line_color, width=3) 
-    draw.ellipse([width//2 - 50, height//2 - 50, width//2 + 50, height//2 + 50], outline=line_color, width=3) 
-    draw.rectangle([width//2 - 90, 10, width//2 + 90, 100], outline=line_color, width=3) 
-    draw.rectangle([width//2 - 90, height-100, width//2 + 90, height-10], outline=line_color, width=3) 
+    draw.rectangle([20, 20, width-20, height-20], outline=line_color, width=6) 
+    draw.line([20, height//2, width-20, height//2], fill=line_color, width=6) 
+    draw.ellipse([width//2 - 100, height//2 - 100, width//2 + 100, height//2 + 100], outline=line_color, width=6) 
+    draw.rectangle([width//2 - 180, 20, width//2 + 180, 200], outline=line_color, width=6) 
+    draw.rectangle([width//2 - 180, height-200, width//2 + 180, height-20], outline=line_color, width=6) 
     
-    draw.rectangle([0, 0, width, 45], fill=(0, 0, 0, 220))
-    draw.rectangle([0, height-35, width, height], fill=(0, 0, 0, 220))
+    draw.rectangle([0, 0, width, 90], fill=(0, 0, 0, 220))
+    draw.rectangle([0, height-70, width, height], fill=(0, 0, 0, 220))
 
     try: 
-        title_font = ImageFont.truetype(FONT_PATH, 24)
-        name_font = ImageFont.truetype(FONT_PATH, 11)
-        stat_font = ImageFont.truetype(FONT_PATH, 13)
-        overall_font = ImageFont.truetype(FONT_PATH, 16)
-        pos_font = ImageFont.truetype(FONT_PATH, 12)
+        title_font = ImageFont.truetype(FONT_PATH, 48)
+        name_font = ImageFont.truetype(FONT_PATH, 22)
+        stat_font = ImageFont.truetype(FONT_PATH, 26)
+        overall_font = ImageFont.truetype(FONT_PATH, 32)
+        pos_font = ImageFont.truetype(FONT_PATH, 24)
     except Exception: 
         title_font = name_font = stat_font = overall_font = pos_font = ImageFont.load_default()
 
     header_text = f"[{club_sigla or 'EFL'}] {(club_name or 'MEU CLUBE').upper()}"
-    draw.text((width//2, 22), header_text, font=title_font, fill="#f1c40f", anchor="mm")
+    draw.text((width//2, 45), header_text, font=title_font, fill="#f1c40f", anchor="mm")
     
     total_overall = 0
     
+    coords, mapping = get_formation_config(formation)
+    
     for i, player in enumerate(team_players):
-        cx, cy = POSITIONS_COORDS[i]
+        if i not in coords: continue
+        cx, cy = coords[i]
         
-        cw, ch = 56, 88
+        cw, ch = 112, 176
         card_box = [cx - cw//2, cy - ch//2, cx + cw//2, cy + ch//2]
         
         if player:
@@ -657,48 +687,155 @@ def create_team_image_sync(team_players, club_name, club_sigla, user_money):
             elif eff_ovr >= 70: card_bg = (50, 50, 50, 240); border = "#bdc3c7" 
             else: card_bg = (60, 40, 30, 240); border = "#cd7f32" 
             
-            draw.rounded_rectangle(card_box, radius=6, fill=card_bg, outline=border, width=2)
+            draw.rounded_rectangle(card_box, radius=12, fill=card_bg, outline=border, width=4)
             
             try:
-                p_img_res = requests.get(player["image"], timeout=3)
+                p_img_res = requests.get(player["image"], timeout=5)
                 p_img = Image.open(BytesIO(p_img_res.content)).convert("RGBA")
-                p_img.thumbnail((44, 44), Image.Resampling.LANCZOS)
+                p_img.thumbnail((88, 88), Image.Resampling.LANCZOS)
                 img_x = int(cx - p_img.width//2)
-                img_y = int(cy - ch//2 + 16) 
+                img_y = int(cy - ch//2 + 32) 
                 field_img.paste(p_img, (img_x, img_y), p_img)
             except: 
                 pass
             
-            draw.text((cx - cw//2 + 4, cy - ch//2 + 4), player['position'], font=pos_font, fill=border, anchor="la") 
-            draw.text((cx + cw//2 - 4, cy - ch//2 + 4), str(eff_ovr), font=overall_font, fill=border, anchor="ra") 
+            draw.text((cx - cw//2 + 8, cy - ch//2 + 8), player['position'], font=pos_font, fill=border, anchor="la") 
+            draw.text((cx + cw//2 - 8, cy - ch//2 + 8), str(eff_ovr), font=overall_font, fill=border, anchor="ra") 
 
-            name_plate_box = [cx - cw//2 + 2, cy + ch//2 - 20, cx + cw//2 - 2, cy + ch//2 - 2]
-            draw.rounded_rectangle(name_plate_box, radius=3, fill=(10, 10, 10, 240))
+            name_plate_box = [cx - cw//2 + 4, cy + ch//2 - 40, cx + cw//2 - 4, cy + ch//2 - 4]
+            draw.rounded_rectangle(name_plate_box, radius=6, fill=(10, 10, 10, 240))
             
             disp_name = player.get('nickname') or player['name'].split(' ')[-1]
             disp_name = disp_name[:11] 
             
-            draw.text((cx, cy + ch//2 - 11), disp_name.upper(), font=name_font, fill="white", anchor="mm") 
+            if captain_name and player['name'] == captain_name:
+                disp_name += " ©️"
+                draw.text((cx, cy + ch//2 - 22), disp_name.upper(), font=name_font, fill="#f1c40f", anchor="mm") 
+            else:
+                draw.text((cx, cy + ch//2 - 22), disp_name.upper(), font=name_font, fill="white", anchor="mm") 
         else:
-            draw.rounded_rectangle(card_box, radius=5, fill=(0,0,0,100), outline=(255,255,255,50), width=2)
+            draw.rounded_rectangle(card_box, radius=10, fill=(0,0,0,100), outline=(255,255,255,50), width=4)
             draw.text((cx, cy), "+", font=title_font, fill=(255,255,255,100), anchor="mm")
 
-    draw.text((15, height - 17), f"⭐ OVR: {total_overall}", font=stat_font, fill="#f1c40f", anchor="lm")
-    draw.text((width - 15, height - 17), f"🏦 Cofre: R$ {user_money:,}", font=stat_font, fill="#2ecc71", anchor="rm")
+    draw.text((30, height - 35), f"⭐ OVR: {total_overall} | Tática: {formation}", font=stat_font, fill="#f1c40f", anchor="lm")
+    draw.text((width - 30, height - 35), f"🏦 Cofre: R$ {user_money:,}", font=stat_font, fill="#2ecc71", anchor="rm")
     
     buffer = BytesIO()
     field_img.save(buffer, format='PNG', optimize=True)
     buffer.seek(0)
     return buffer
 
-async def generate_team_image(team_players, user):
-    user_data = await get_user_data(user.id)
+async def generate_team_image(user_data, user):
+    team_players = user_data.get('team', [None]*11)
     club_name = user_data.get('club_name') or f"Clube de {user.display_name}"
     club_sigla = user_data.get('club_sigla') or "EFL"
     money = user_data.get('money') or 0
-    return await asyncio.to_thread(create_team_image_sync, team_players, club_name, club_sigla, money)
+    formation = user_data.get('formation', '4-3-3')
+    captain = user_data.get('captain')
+    
+    return await asyncio.to_thread(create_team_image_sync, team_players, club_name, club_sigla, money, formation, captain)
 
-# --- 7. CLASSES DE INTERAÇÃO (VIEWS E PAGINATORS) ---
+# --- 7. CLASSES DE INTERAÇÃO (VIEWS E TEAM MANAGER) ---
+
+class TeamManagerView(discord.ui.View):
+    def __init__(self, ctx, user_data):
+        super().__init__(timeout=300)
+        self.ctx = ctx
+        self.user_data = user_data
+
+    @discord.ui.select(placeholder="📋 Mudar Formação", min_values=1, max_values=1, options=[
+        discord.SelectOption(label="4-3-3 (Padrão)", value="4-3-3", description="Ataque total com 3 Meias e 3 DC"),
+        discord.SelectOption(label="4-4-2", value="4-4-2", description="Equilíbrio com 4 Meias e 2 DC"),
+        discord.SelectOption(label="3-4-3", value="3-4-3", description="Ofensivo com 3 DFC, 4 Meias e 3 DC")
+    ])
+    async def select_formation(self, inter: discord.Interaction, select: discord.ui.Select):
+        if inter.user != self.ctx.author: return
+        val = select.values[0]
+        
+        async with data_lock:
+            d = await get_user_data(self.ctx.author.id)
+            d['formation'] = val
+            d['team'] = [None] * 11 
+            await save_user_data(self.ctx.author.id, d)
+            
+        await inter.response.send_message(f"✅ Tática alterada para **{val}**!\n⚠️ *Sua prancheta foi esvaziada para evitar erros de posicionamento. Escale os jogadores novamente com `--escalar`.*", ephemeral=True)
+        
+    @discord.ui.button(label="🎖️ Escolher Capitão", style=discord.ButtonStyle.primary)
+    async def btn_captain(self, inter: discord.Interaction, button: discord.ui.Button):
+        if inter.user != self.ctx.author: return
+        
+        team_players = [p for p in self.user_data['team'] if p]
+        if not team_players:
+            return await inter.response.send_message("❌ Você precisa ter jogadores escalados na prancheta para escolher um capitão.", ephemeral=True)
+            
+        options = []
+        for p in team_players:
+            options.append(discord.SelectOption(label=p['name'], value=p['name'], description=f"OVR: {p['overall']} - {p['position']}"))
+            
+        select = discord.ui.Select(placeholder="Selecione o Capitão", options=options)
+        
+        async def captain_callback(i: discord.Interaction):
+            val = select.values[0]
+            async with data_lock:
+                d = await get_user_data(self.ctx.author.id)
+                d['captain'] = val
+                await save_user_data(self.ctx.author.id, d)
+            await i.response.send_message(f"🎖️ **{val}** recebeu a braçadeira de Capitão e liderará a equipe!\n*(Dê `--team` de novo para ver o ícone)*", ephemeral=True)
+            
+        select.callback = captain_callback
+        view = discord.ui.View()
+        view.add_item(select)
+        
+        await inter.response.send_message("Selecione na lista abaixo quem será o capitão do time:", view=view, ephemeral=True)
+
+    @discord.ui.button(label="🧹 Limpar Prancheta", style=discord.ButtonStyle.danger)
+    async def btn_clear(self, inter: discord.Interaction, button: discord.ui.Button):
+        if inter.user != self.ctx.author: return
+        async with data_lock:
+            d = await get_user_data(self.ctx.author.id)
+            d['team'] = [None] * 11
+            await save_user_data(self.ctx.author.id, d)
+        await inter.response.send_message("✅ Todos os jogadores foram mandados para o banco de reservas!", ephemeral=True)
+
+
+class MarketPaginator(discord.ui.View):
+    def __init__(self, items, title):
+        super().__init__(timeout=120)
+        self.items = items
+        self.title = title
+        self.page = 0
+        self.per_page = 15
+
+    async def get_page(self):
+        start = self.page * self.per_page
+        end = start + self.per_page
+        page_items = self.items[start:end]
+        
+        txt = "\n".join(page_items)
+        emb = discord.Embed(title=self.title, description=txt, color=discord.Color.gold())
+        
+        total_pages = (len(self.items) - 1) // self.per_page + 1
+        emb.set_footer(text=f"Página {self.page + 1}/{total_pages} | Total de Atletas: {len(self.items)}")
+        return emb
+
+    async def update_view(self, inter=None):
+        self.children[0].disabled = (self.page == 0)
+        self.children[1].disabled = (self.page == (len(self.items) - 1) // self.per_page)
+        emb = await self.get_page()
+        if inter:
+            await inter.response.edit_message(embed=emb, view=self)
+        else:
+            return emb
+
+    @discord.ui.button(label="⏪ Anterior", style=discord.ButtonStyle.grey, disabled=True)
+    async def prev(self, inter, b): 
+        self.page -= 1
+        await self.update_view(inter)
+
+    @discord.ui.button(label="Próxima ⏩", style=discord.ButtonStyle.grey)
+    async def next(self, inter, b): 
+        self.page += 1
+        await self.update_view(inter)
 
 class AddPlayerView(discord.ui.View):
     def __init__(self, author, rbx, img): 
@@ -758,7 +895,7 @@ class KeepOrSellView(discord.ui.View):
             u['squad'].append(self.player)
             u['contracted_players'].append(self.player['name'])
             await save_user_data(self.author.id, u)
-        await inter.response.edit_message(content=f"✅ **{self.player['name']}** guardado com sucesso!", embed=None, view=None)
+        await inter.response.edit_message(content=f"✅ **{self.player['name']}** guardado com sucesso no elenco!", embed=None, view=None)
 
     @discord.ui.button(label="Vender Rápido", style=discord.ButtonStyle.red)
     async def sell(self, inter, btn):
@@ -890,23 +1027,29 @@ class ActionView(discord.ui.View):
             async with data_lock:
                 d = await get_user_data(self.ctx.author.id)
                 t = d['team']
+                formation = d.get('formation', '4-3-3')
+                
                 if any(x and x['name'] == p['name'] for x in t): 
                     return await inter.response.send_message("❌ Já é titular.", ephemeral=True)
+                    
+                coords, mapping = get_formation_config(formation)
                 done = False
+                
                 for pos in p['position'].split('/'):
-                    if pos in SLOT_MAPPING:
-                        for idx in SLOT_MAPPING[pos]:
+                    if pos in mapping:
+                        for idx in mapping[pos]:
                             if t[idx] is None: 
                                 t[idx] = p
                                 done = True
                                 break
                     if done: break
+                    
                 if done: 
                     await save_user_data(self.ctx.author.id, d)
-                    emb = discord.Embed(title="✅ JOGADOR ESCALADO!", description=f"**{p['name']}** agora é o dono da posição.", color=discord.Color.green())
+                    emb = discord.Embed(title="✅ JOGADOR ESCALADO!", description=f"**{p['name']}** agora é o dono da posição na tática {formation}.", color=discord.Color.green())
                     await inter.response.edit_message(embed=emb, attachments=[], view=None)
                 else: 
-                    await inter.response.send_message("❌ Sem vaga livre para essa posição na prancheta.\n💡 Dica: Use `--banco <nome>` para tirar alguém e abrir vaga.", ephemeral=True)
+                    await inter.response.send_message("❌ Sem vaga livre para essa posição na prancheta.\n💡 Dica: Use `--banco <nome>` para tirar alguém ou mude a formação no `--team`.", ephemeral=True)
 
 # --- 8. EVENTOS DO BOT ---
 
@@ -914,7 +1057,7 @@ class ActionView(discord.ui.View):
 async def on_ready():
     print(f'🟢 EFL Guru ONLINE! Todas as linhas carregadas e Render ativado.')
     fetch_and_parse_players()
-    await bot.change_presence(activity=discord.Game(name=f"{BOT_PREFIX}help | EFL Pro 11v11"))
+    await bot.change_presence(activity=discord.Game(name=f"{BOT_PREFIX}help | EFL Manager"))
 
 @bot.check
 async def maintenance_check(ctx):
@@ -935,7 +1078,7 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure): return
     print(f"Erro detectado: {error}")
 
-# --- 9. COMANDOS DE ADMINISTRAÇÃO E FIX ROBLOX ---
+# --- 9. COMANDOS DE ADMINISTRAÇÃO ---
 
 @bot.command(name='lock')
 @commands.has_permissions(administrator=True)
@@ -1024,7 +1167,8 @@ async def bulk_add_cmd(ctx):
                 erros_log.append(f"Ignorado: {n} (Já está no banco de dados)")
                 continue
                 
-            if pos not in SLOT_MAPPING: 
+            coords, mapping = get_formation_config("4-3-3")
+            if pos not in mapping: 
                 erros_log.append(f"Ignorado: {n} (Posição {pos} não reconhecida)")
                 continue
                 
@@ -1062,7 +1206,6 @@ async def edit_player_cmd(ctx, *, nick: str):
 @bot.command(name='delplayer')
 @commands.has_permissions(administrator=True)
 async def del_player_cmd(ctx, *, nick: str):
-    """Remove um jogador do banco de dados global permanentemente"""
     async with data_lock:
         try:
             res = supabase.table("jogadores").select("data").eq("id", "ROBLOX_CARDS").execute()
@@ -1091,9 +1234,21 @@ async def sync_cmd(ctx):
 
 # --- 10. COMANDOS DO JOGO E GESTÃO ---
 
+@bot.command(name='jogadores')
+async def jogadores_cmd(ctx):
+    """Lista todos os jogadores cadastrados no banco de dados da EFL"""
+    if not ALL_PLAYERS:
+        return await ctx.send("❌ O mercado está vazio. Nenhum jogador cadastrado no momento.")
+        
+    sorted_players = sorted(ALL_PLAYERS, key=lambda x: x['overall'], reverse=True)
+    linhas = [f"⭐ **{p['overall']}** | `{p['position']}` | {p['name']}" for p in sorted_players]
+    
+    view = MarketPaginator(linhas, "🌍 Mercado Global de Jogadores - EFL")
+    emb = await view.get_page()
+    await ctx.send(embed=emb, view=view)
+
 @bot.command(name='setclube')
 async def setclube_cmd(ctx, sigla: str, *, nome: str):
-    """Configura a sigla e o nome que vão aparecer na prancheta"""
     d = await get_user_data(ctx.author.id)
     d['club_sigla'] = sigla.upper()[:4]
     d['club_name'] = nome[:20].strip()
@@ -1135,7 +1290,7 @@ async def obter_cmd(ctx):
     elif p.get('overall', 60) >= 75: raridade = "🥈 Prata"
     
     view = KeepOrSellView(ctx.author, p)
-    msg = await ctx.send(content=f"🃏 **OLHEIRO DA EFL:** Você encontrou um talento **{raridade}** solto pelo mundo!\n*(Você tem 60 segundos para escolher ou ele irá para o seu elenco)*", file=discord.File(buf, "card.png"), view=view)
+    msg = await ctx.send(content=f"🃏 **OLHEIRO DA EFL:** Você encontrou um talento **{raridade}** solto pelo mundo!\n*(Você tem 60 segundos para escolher ou ele irá para o seu elenco automaticamente)*", file=discord.File(buf, "card.png"), view=view)
     view.message = msg
     
     bot.loop.create_task(reminder_task(ctx, ctx.author))
@@ -1232,18 +1387,13 @@ async def elenco_cmd(ctx):
 @bot.command(name='team')
 async def team_cmd(ctx):
     d = await get_user_data(ctx.author.id)
-    if not any(d['team']): 
-        return await ctx.send("❌ Sua prancheta está vazia. Use `--escalar <nome>` para montar o time.")
-    msg = await ctx.send("⚙️ Desenhando prancheta 4-3-3...")
-    
-    money = d.get('money', 0)
-    sigla = d.get('club_sigla', 'EFL')
-    nome = d.get('club_name') or ctx.author.display_name
+    msg = await ctx.send("⚙️ Desenhando prancheta HD...")
     
     async with image_lock:
         try:
-            buf = await asyncio.to_thread(create_team_image_sync, d['team'], nome, sigla, money)
-            await ctx.send(file=discord.File(buf, "team.png"))
+            buf = await generate_team_image(d, ctx.author)
+            view = TeamManagerView(ctx, d)
+            await ctx.send(file=discord.File(buf, "team.png"), view=view)
             await msg.delete()
         except Exception as e: 
             await msg.edit(content=f"❌ Erro na geração do gráfico: {e}")
@@ -1285,18 +1435,18 @@ async def ranking_cmd(ctx):
 @bot.command(name='help')
 async def help_cmd(ctx):
     emb = discord.Embed(title="📜 Painel de Ajuda EFL Pro", description="Seja bem-vindo ao mercado EFL Pro! Abaixo estão os comandos disponíveis:", color=discord.Color.gold())
-    emb.add_field(name="💰 Gestão & Economia", value="`--cofre`, `--donate`, `--contratar`, `--sell`, `--obter`", inline=False)
+    emb.add_field(name="💰 Gestão & Economia", value="`--cofre`, `--donate`, `--contratar`, `--sell`, `--obter`, `--jogadores`", inline=False)
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 31.9 - Desenvolvido exclusivamente para a EFL")
+    emb.set_footer(text="Versão 32.0 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
 if __name__ == "__main__":
     token = os.getenv("DISCORD_TOKEN")
     if token: 
-        keep_alive() # INICIA O SERVIDOR WEB PARA O UPTIMEROBOT
+        keep_alive()
         bot.run(token)
     else: 
         print("❌ Token ausente no arquivo .env.")
