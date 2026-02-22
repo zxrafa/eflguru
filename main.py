@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 34.0 (A MURALHA INQUEBRÁVEL - AUTO-ESCALAR E LIVE UPDATE)
+EFL Guru - Versão 35.0 (A MURALHA INQUEBRÁVEL - ECONOMIA REALISTA & BOXES)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Formatação original preservada. NENHUMA linha comprimida.
-- NOVO BOTÃO AUTO-ESCALAR: Preenche a prancheta com os melhores do elenco.
-- LIVE UPDATE NA PRANCHETA: Mudar tática, limpar, auto-escalar ou escolher capitão agora atualiza a imagem em tempo real na mesma mensagem.
-- SISTEMA ANALYZEMEMBERS: Comando secreto para filtrar e cadastrar membros em massa.
-- FIX DE ESPAÇAMENTO: Altura da imagem ampliada para 1240px.
-- FIX GOLEIRO: Carta do PO descida para não sobrepor com os DFCs.
+- HIPER INFLAÇÃO DE OVERALL: Fórmula ajustada (Preços chegam a 14M no OVR 95).
+- SISTEMA DE CAIXAS (--caixa): Drop diário (12 em 12h) com Bronze, Iron, Gold, Diamond e Master Box.
+- LIVE UPDATE NA PRANCHETA: Mudar tática, limpar ou auto-escalar atualiza a imagem na hora.
+- SISTEMA ANALYZEMEMBERS: Comando secreto para filtrar e cadastrar membros da base.
 - OVR MÍNIMO: Base do sistema ajustada de 60 para 70.
-- NOVA ECONOMIA: Saldo inicial reduzido para 1.000.000 (1 Milhão).
-- VALORIZAÇÃO DE OVR: Cálculo de valor exponencial.
+- NOVA ECONOMIA: Saldo inicial mantido em 1.000.000 (1 Milhão) para ser desafiador.
+- AUTO-ATUALIZAÇÃO: O mercado corrige todos os preços instantaneamente ao ligar.
 ----------------------------------------------------------------------
 """
 
@@ -60,12 +59,15 @@ else:
     print("✅ Conectado ao Supabase com sucesso!")
 
 BOT_PREFIX = "--"
-INITIAL_MONEY = 1000000  # Saldo Inicial ajustado para 1 Milhão
+INITIAL_MONEY = 1000000  # Saldo Inicial: 1 Milhão
 SALE_PERCENTAGE = 0.5
 
 def calculate_player_value(ovr):
-    """Calcula o valor do jogador com curva exponencial. Quanto maior o OVR, MUITO mais caro."""
-    return int((ovr ** 3) * 1.5)
+    """Calcula o valor do jogador com curva exponencial agressiva.
+    Ex: 70 = 150k, 80 = ~928k, 90 = ~5.7M, 95 = ~14.3M"""
+    base_value = 150000
+    adjusted_ovr = max(70, ovr)
+    return int(base_value * (1.2 ** (adjusted_ovr - 70)))
 
 # --- SISTEMA DE FONTE AUTOMÁTICA ---
 FONT_PATH = "EFL_Font.ttf"
@@ -89,7 +91,7 @@ def get_formation_config(formation):
     if formation == "4-4-2":
         coords = {
             0: (420, 1060),  # PO descido
-            1: (120, 820), 2: (320, 830), 3: (520, 830), 4: (720, 820),  # 4 DFC alinhados
+            1: (120, 820), 2: (320, 830), 3: (520, 830), 4: (720, 820),  # 4 DFC
             5: (150, 530), 6: (330, 560), 7: (510, 560), 8: (690, 530),  # 4 Meias
             9: (300, 200), 10: (540, 200)  # 2 DC
         }
@@ -101,7 +103,7 @@ def get_formation_config(formation):
         }
     elif formation == "3-4-3":
         coords = {
-            0: (420, 1060),  # PO descido
+            0: (420, 1060),  # PO
             1: (200, 830), 2: (420, 850), 3: (640, 830),  # 3 DFC
             4: (150, 530), 5: (330, 560), 6: (510, 560), 7: (690, 530),  # 4 Meias
             8: (170, 240), 9: (420, 190), 10: (670, 240)  # 3 DC
@@ -114,8 +116,8 @@ def get_formation_config(formation):
         }
     else:  # Padrão: 4-3-3 Restrita
         coords = {
-            0: (420, 1060),  # PO descido
-            1: (120, 820), 2: (320, 830), 3: (520, 830), 4: (720, 820),  # 4 DFC alinhados
+            0: (420, 1060),  # PO
+            1: (120, 820), 2: (320, 830), 3: (520, 830), 4: (720, 820),  # 4 DFC
             5: (200, 530), 6: (420, 560), 7: (640, 530),  # 3 Meias
             8: (170, 240), 9: (420, 190), 10: (670, 240)  # 3 DC
         }
@@ -676,7 +678,6 @@ async def get_user_data(user_id):
                 if p and idx < 11: new_team[idx] = p
             data["team"] = new_team
 
-        # --- AUTO-SYNC: ATUALIZA AS CARTAS DO USUÁRIO SE O ADM EDITOU NO BANCO GLOBAL ---
         global ALL_PLAYERS
         global_dict = {p['name'].lower(): p for p in ALL_PLAYERS}
         needs_save = False
@@ -1246,9 +1247,10 @@ async def maintenance_check(ctx):
 @bot.event
 async def on_command_error(ctx, error):
     if isinstance(error, commands.CommandOnCooldown):
-        minutos = int(error.retry_after // 60)
+        horas = int(error.retry_after // 3600)
+        minutos = int((error.retry_after % 3600) // 60)
         segundos = int(error.retry_after % 60)
-        await ctx.send(f"⏳ **Calma aí, chefinho!** O olheiro está viajando pelo mundo atrás de talentos.\n\nTente usar o comando novamente em **{minutos} minutos e {segundos} segundos**.")
+        await ctx.send(f"⏳ **Calma aí, chefinho!** O comando está em tempo de recarga.\n\nTente usar novamente em **{horas}h {minutos}m {segundos}s**.")
         return
     if isinstance(error, commands.CommandNotFound): return
     if isinstance(error, commands.CheckFailure): return
@@ -1454,6 +1456,73 @@ async def sync_cmd(ctx):
 
 # --- 10. COMANDOS DO JOGO E GESTÃO ---
 
+@bot.command(name='caixa')
+@commands.cooldown(1, 43200, commands.BucketType.user)  # 12 horas (12 * 60 * 60)
+async def caixa_cmd(ctx):
+    boxes = ["Bronze", "Iron", "Gold", "Diamond", "Master"]
+    weights = [50, 30, 13, 5, 2]
+    chosen_box = random.choices(boxes, weights=weights, k=1)[0]
+    
+    async with data_lock:
+        u = await get_user_data(ctx.author.id)
+        livres = [p for p in ALL_PLAYERS if p["name"] not in u["contracted_players"]]
+        
+        def get_player_by_ovr(min_o, max_o):
+            pool = [p for p in livres if min_o <= p.get('overall', 70) <= max_o]
+            if pool: return random.choice(pool)
+            return None
+            
+        money_won = 0
+        player_won = None
+        
+        if chosen_box == "Bronze":
+            money_won = random.randint(50000, 150000)
+            emoji = "🥉"
+        elif chosen_box == "Iron":
+            money_won = random.randint(100000, 300000)
+            emoji = "⚙️"
+            if random.random() < 0.20:
+                player_won = get_player_by_ovr(70, 74)
+        elif chosen_box == "Gold":
+            money_won = random.randint(200000, 500000)
+            emoji = "🥇"
+            chance = random.random()
+            if chance < 0.10: player_won = get_player_by_ovr(80, 89)
+            elif chance < 0.60: player_won = get_player_by_ovr(75, 79)
+        elif chosen_box == "Diamond":
+            money_won = random.randint(500000, 1000000)
+            emoji = "💎"
+            chance = random.random()
+            if chance < 0.10: player_won = get_player_by_ovr(90, 99)
+            else: player_won = get_player_by_ovr(80, 89)
+        elif chosen_box == "Master":
+            money_won = random.randint(1000000, 2000000)
+            emoji = "🏆"
+            player_won = get_player_by_ovr(90, 99)
+            if not player_won: player_won = get_player_by_ovr(80, 89)
+            
+        u['money'] += money_won
+        desc = f"Você abriu uma **{emoji} {chosen_box} Box**!\n\n💵 **Dinheiro:** R$ {money_won:,}"
+        file_to_send = None
+        
+        if player_won:
+            u['squad'].append(player_won)
+            u['contracted_players'].append(player_won['name'])
+            desc += f"\n\n👤 **Jogador Encontrado:** {player_won['name']} (⭐ {player_won['overall']})\n*O jogador foi adicionado diretamente ao seu elenco!*"
+            
+            async with image_lock:
+                buf = await asyncio.to_thread(render_single_card_sync, player_won)
+                file_to_send = discord.File(buf, "card.png")
+                
+        await save_user_data(ctx.author.id, u)
+        
+    emb = discord.Embed(title="🎁 Recompensa Diária (12h)", description=desc, color=discord.Color.gold())
+    if file_to_send:
+        emb.set_image(url="attachment://card.png")
+        await ctx.send(embed=emb, file=file_to_send)
+    else:
+        await ctx.send(embed=emb)
+
 @bot.command(name='jogadores')
 async def jogadores_cmd(ctx):
     """Lista todos os jogadores cadastrados no banco de dados da EFL"""
@@ -1596,7 +1665,7 @@ async def banco_cmd(ctx, *, q: str):
 async def elenco_cmd(ctx):
     d = await get_user_data(ctx.author.id)
     if not d['squad']: 
-        return await ctx.send("❌ Seu elenco está vazio. Digite `--obter` ou `--contratar` para buscar atletas.")
+        return await ctx.send("❌ Seu elenco está vazio. Digite `--obter`, `--caixa` ou `--contratar` para buscar atletas.")
         
     txt = "\n".join([f"**{p['position']}** | {p['name']} | ⭐ {p['overall']}" for p in sorted(d['squad'], key=lambda x: x['overall'], reverse=True)[:25]])
     
@@ -1655,11 +1724,11 @@ async def ranking_cmd(ctx):
 @bot.command(name='help')
 async def help_cmd(ctx):
     emb = discord.Embed(title="📜 Painel de Ajuda EFL Pro", description="Seja bem-vindo ao mercado EFL Pro! Abaixo estão os comandos disponíveis:", color=discord.Color.gold())
-    emb.add_field(name="💰 Gestão & Economia", value="`--cofre`, `--donate`, `--contratar`, `--sell`, `--obter`, `--jogadores`", inline=False)
+    emb.add_field(name="💰 Gestão & Economia", value="`--caixa`, `--cofre`, `--donate`, `--contratar`, `--sell`, `--obter`, `--jogadores`", inline=False)
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 34.0 - Desenvolvido exclusivamente para a EFL")
+    emb.set_footer(text="Versão 35.0 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
