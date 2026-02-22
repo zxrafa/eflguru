@@ -1,16 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 32.0 (A MURALHA INQUEBRÁVEL - TEAM MANAGER HD)
+EFL Guru - Versão 32.3 (A MURALHA INQUEBRÁVEL - OVR MÍNIMO 70)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Formatação original preservada. NENHUMA linha comprimida.
-- PRANCHETA HD: Imagem ampliada para 840x1100. Cartas maiores e mais nítidas.
+- OVR MÍNIMO: Base do sistema ajustada de 60 para 70.
+- NOVA ECONOMIA: Saldo inicial reduzido para 1.000.000 (1 Milhão).
+- VALORIZAÇÃO DE OVR: Cálculo de valor exponencial (Maior OVR = Muito mais caro).
+- AUTO-ATUALIZAÇÃO DE PREÇOS: Corrige o valor de todas as cartas no banco de dados e elencos.
+- FIX GLIPHOS: Emojis removidos do rodapé para evitar os quadrados (tofu).
+- SOMBRA NAS CARTAS: Adicionado Drop Shadow para profundidade no campo.
+- AUTO-RESIZE NOMES: Fonte dos mini-cards diminui automaticamente para não vazar.
+- CAPITÃO SEGURO: Ícone de capitão alterado para [C] evitando bugs de fonte.
+- PRANCHETA HD: Resolução mantida alta e padding das cartas ajustado.
 - TEAM MANAGER: Opções interativas no --team (Mudar Capitão, Tática e Limpar).
-- TÁTICAS DINÂMICAS: Suporte a 4-3-3, 4-4-2 e 3-4-3 com posições atualizadas.
-- AUTO-SYNC GLOBAL: Editar a carta global atualiza o elenco de todos os usuários.
-- COMANDO --JOGADORES: Lista completa de todos os atletas do mercado.
-- TIMEOUT INTELIGENTE: Se não clicar no obter em 60s, o atleta vai pro elenco.
-- AVISO DE COOLDOWN: O bot responde quantos minutos/segundos faltam no olheiro.
-- FIX ROBLOX API: Sistema de headers e retry no Bulk Add.
+- TÁTICAS DINÂMICAS: Suporte a 4-3-3, 4-4-2 e 3-4-3.
 ----------------------------------------------------------------------
 """
 
@@ -60,8 +63,12 @@ else:
     print("✅ Conectado ao Supabase com sucesso!")
 
 BOT_PREFIX = "--"
-INITIAL_MONEY = 1000000000
+INITIAL_MONEY = 1000000  # Saldo Inicial ajustado para 1 Milhão
 SALE_PERCENTAGE = 0.5
+
+def calculate_player_value(ovr):
+    """Calcula o valor do jogador com curva exponencial. Quanto maior o OVR, MUITO mais caro."""
+    return int((ovr ** 3) * 1.5)
 
 # --- SISTEMA DE FONTE AUTOMÁTICA ---
 FONT_PATH = "EFL_Font.ttf"
@@ -108,7 +115,7 @@ def get_formation_config(formation):
             "MDC": [4, 5, 6, 7], "MC": [4, 5, 6, 7], "MCO": [4, 5, 6, 7], "VOL": [4, 5, 6, 7],
             "DC": [8, 9, 10], "ST": [8, 9, 10], "CA": [8, 9, 10]
         }
-    else:  # Padrão: 4-3-3
+    else:  # Padrão: 4-3-3 Restrita
         coords = {
             0: (420, 970),  # PO
             1: (120, 790), 2: (320, 800), 3: (520, 800), 4: (720, 790),  # 4 DFC
@@ -185,14 +192,14 @@ ACHIEVEMENTS = {
     "primeira_vitoria": {"name": "Primeira Vitória", "desc": "Vença sua primeira partida na EFL.", "emoji": "🏆"}
 }
 
-# --- 3. MOTOR GRÁFICO (CARD RENDER + AJUSTE DE NOME E FADE) ---
+# --- 3. MOTOR GRÁFICO (CARD RENDER GERAL) ---
 
 def render_single_card_sync(player):
     """Gera uma imagem de card individual estilo EA FC com fade e fontes robustas"""
     c_w, c_h = 300, 450
     card = Image.new("RGBA", (c_w, c_h), (0, 0, 0, 0))
     
-    ovr = player.get('overall', 60)
+    ovr = player.get('overall', 70)
     
     if ovr >= 90: # Special
         c_top = (70, 15, 90)
@@ -313,7 +320,7 @@ class AddPlayerModal(discord.ui.Modal, title='Definir Status da Carta'):
             if p_str not in mapping:
                 return await inter.response.send_message(f"❌ Posição `{p_str}` inválida.", ephemeral=True)
                 
-            v_int = o_int * 25000
+            v_int = calculate_player_value(o_int)
             new_p = {"name": self.rbx_name, "image": self.img_url, "overall": o_int, "position": p_str, "value": v_int}
             
             async with data_lock:
@@ -341,7 +348,7 @@ class EditPlayerModal(discord.ui.Modal, title='Editar Atleta'):
     async def on_submit(self, inter: discord.Interaction):
         try:
             o = int(self.ovr.value)
-            v = o * 25000
+            v = calculate_player_value(o)
             p_str = self.pos.value.upper().strip()
             
             if p_str in POS_MIGRATION:
@@ -517,13 +524,20 @@ def fetch_and_parse_players():
             
             needs_update = False
             for p in comunidade:
+                # Migração de Posicao
                 if p.get('position') in POS_MIGRATION:
                     p['position'] = POS_MIGRATION[p['position']]
+                    needs_update = True
+                
+                # Migração de Valor/Economia Exponencial
+                correct_val = calculate_player_value(p.get('overall', 70))
+                if p.get('value', 0) != correct_val:
+                    p['value'] = correct_val
                     needs_update = True
             
             if needs_update:
                 supabase.table("jogadores").update({"data": comunidade}).eq("id", "ROBLOX_CARDS").execute()
-                print("🔄 Mercado atualizado automaticamente com as novas nomenclaturas de posição.")
+                print("🔄 Mercado atualizado automaticamente com as novas nomenclaturas de posição e curva de economia.")
 
             ALL_PLAYERS.extend(comunidade)
             print(f"✅ {len(comunidade)} Cartas carregadas no Mercado.")
@@ -579,6 +593,11 @@ async def get_user_data(user_id):
                 if p.get('position') in POS_MIGRATION:
                     p['position'] = POS_MIGRATION[p['position']]
                     needs_save = True
+                
+                correct_val = calculate_player_value(p.get('overall', 70))
+                if p.get('value', 0) != correct_val:
+                    p['value'] = correct_val
+                    needs_save = True
                     
                 if p['name'].lower() in global_dict:
                     gp = global_dict[p['name'].lower()]
@@ -592,6 +611,11 @@ async def get_user_data(user_id):
             if p:
                 if p.get('position') in POS_MIGRATION:
                     p['position'] = POS_MIGRATION[p['position']]
+                    needs_save = True
+                
+                correct_val = calculate_player_value(p.get('overall', 70))
+                if p.get('value', 0) != correct_val:
+                    p['value'] = correct_val
                     needs_save = True
                     
                 if p['name'].lower() in global_dict:
@@ -624,7 +648,7 @@ def normalize_str(s):
 def get_player_effective_overall(player): 
     if not player: 
         return 0
-    return player.get('overall', 0) + player.get('training_level', 0)
+    return player.get('overall', 70) + player.get('training_level', 0)
 
 def add_player_defaults(player):
     if 'nickname' not in player: 
@@ -633,7 +657,7 @@ def add_player_defaults(player):
         player['training_level'] = 0
     return player
 
-# --- 6. GERADOR DE IMAGEM DA PRANCHETA EM HD (840x1100) ---
+# --- 6. GERADOR DE IMAGEM DA PRANCHETA EM HD (840x1100) COM CORREÇÕES VISUAIS ---
 
 def create_team_image_sync(team_players, club_name, club_sigla, user_money, formation, captain_name):
     width, height = 840, 1100 
@@ -656,12 +680,11 @@ def create_team_image_sync(team_players, club_name, club_sigla, user_money, form
 
     try: 
         title_font = ImageFont.truetype(FONT_PATH, 48)
-        name_font = ImageFont.truetype(FONT_PATH, 22)
         stat_font = ImageFont.truetype(FONT_PATH, 26)
-        overall_font = ImageFont.truetype(FONT_PATH, 32)
-        pos_font = ImageFont.truetype(FONT_PATH, 24)
+        overall_font = ImageFont.truetype(FONT_PATH, 28) 
+        pos_font = ImageFont.truetype(FONT_PATH, 22) 
     except Exception: 
-        title_font = name_font = stat_font = overall_font = pos_font = ImageFont.load_default()
+        title_font = stat_font = overall_font = pos_font = ImageFont.load_default()
 
     header_text = f"[{club_sigla or 'EFL'}] {(club_name or 'MEU CLUBE').upper()}"
     draw.text((width//2, 45), header_text, font=title_font, fill="#f1c40f", anchor="mm")
@@ -674,7 +697,7 @@ def create_team_image_sync(team_players, club_name, club_sigla, user_money, form
         if i not in coords: continue
         cx, cy = coords[i]
         
-        cw, ch = 112, 176
+        cw, ch = 120, 180 
         card_box = [cx - cw//2, cy - ch//2, cx + cw//2, cy + ch//2]
         
         if player:
@@ -687,38 +710,50 @@ def create_team_image_sync(team_players, club_name, club_sigla, user_money, form
             elif eff_ovr >= 70: card_bg = (50, 50, 50, 240); border = "#bdc3c7" 
             else: card_bg = (60, 40, 30, 240); border = "#cd7f32" 
             
+            shadow_box = [card_box[0] + 6, card_box[1] + 6, card_box[2] + 6, card_box[3] + 6]
+            draw.rounded_rectangle(shadow_box, radius=12, fill=(0, 0, 0, 150))
+            
             draw.rounded_rectangle(card_box, radius=12, fill=card_bg, outline=border, width=4)
             
             try:
                 p_img_res = requests.get(player["image"], timeout=5)
                 p_img = Image.open(BytesIO(p_img_res.content)).convert("RGBA")
-                p_img.thumbnail((88, 88), Image.Resampling.LANCZOS)
+                p_img.thumbnail((96, 96), Image.Resampling.LANCZOS)
                 img_x = int(cx - p_img.width//2)
-                img_y = int(cy - ch//2 + 32) 
+                img_y = int(cy - ch//2 + 36) 
                 field_img.paste(p_img, (img_x, img_y), p_img)
             except: 
                 pass
             
-            draw.text((cx - cw//2 + 8, cy - ch//2 + 8), player['position'], font=pos_font, fill=border, anchor="la") 
-            draw.text((cx + cw//2 - 8, cy - ch//2 + 8), str(eff_ovr), font=overall_font, fill=border, anchor="ra") 
+            draw.text((cx - cw//2 + 10, cy - ch//2 + 10), player['position'], font=pos_font, fill=border, anchor="la") 
+            draw.text((cx + cw//2 - 10, cy - ch//2 + 10), str(eff_ovr), font=overall_font, fill=border, anchor="ra") 
 
             name_plate_box = [cx - cw//2 + 4, cy + ch//2 - 40, cx + cw//2 - 4, cy + ch//2 - 4]
             draw.rounded_rectangle(name_plate_box, radius=6, fill=(10, 10, 10, 240))
             
             disp_name = player.get('nickname') or player['name'].split(' ')[-1]
-            disp_name = disp_name[:11] 
+            disp_name = disp_name[:12] 
             
             if captain_name and player['name'] == captain_name:
-                disp_name += " ©️"
-                draw.text((cx, cy + ch//2 - 22), disp_name.upper(), font=name_font, fill="#f1c40f", anchor="mm") 
-            else:
-                draw.text((cx, cy + ch//2 - 22), disp_name.upper(), font=name_font, fill="white", anchor="mm") 
+                disp_name += " [C]"
+            
+            current_name_size = 22
+            try:
+                name_font = ImageFont.truetype(FONT_PATH, current_name_size)
+                while name_font.getlength(disp_name.upper()) > cw - 12 and current_name_size > 10:
+                    current_name_size -= 1
+                    name_font = ImageFont.truetype(FONT_PATH, current_name_size)
+            except:
+                name_font = ImageFont.load_default()
+                
+            color_text = "#f1c40f" if (captain_name and player['name'] == captain_name) else "white"
+            draw.text((cx, cy + ch//2 - 22), disp_name.upper(), font=name_font, fill=color_text, anchor="mm") 
         else:
             draw.rounded_rectangle(card_box, radius=10, fill=(0,0,0,100), outline=(255,255,255,50), width=4)
             draw.text((cx, cy), "+", font=title_font, fill=(255,255,255,100), anchor="mm")
 
-    draw.text((30, height - 35), f"⭐ OVR: {total_overall} | Tática: {formation}", font=stat_font, fill="#f1c40f", anchor="lm")
-    draw.text((width - 30, height - 35), f"🏦 Cofre: R$ {user_money:,}", font=stat_font, fill="#2ecc71", anchor="rm")
+    draw.text((30, height - 35), f"OVR: {total_overall} | TATICA: {formation}", font=stat_font, fill="#f1c40f", anchor="lm")
+    draw.text((width - 30, height - 35), f"COFRE: R$ {user_money:,}", font=stat_font, fill="#2ecc71", anchor="rm")
     
     buffer = BytesIO()
     field_img.save(buffer, format='PNG', optimize=True)
@@ -1078,7 +1113,7 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.CheckFailure): return
     print(f"Erro detectado: {error}")
 
-# --- 9. COMANDOS DE ADMINISTRAÇÃO ---
+# --- 9. COMANDOS DE ADMINISTRAÇÃO E FIX ROBLOX ---
 
 @bot.command(name='lock')
 @commands.has_permissions(administrator=True)
@@ -1174,7 +1209,8 @@ async def bulk_add_cmd(ctx):
                 
             img = await asyncio.to_thread(get_roblox_data_sync, n)
             if img:
-                cards.append({"name": n, "image": img, "overall": ovr, "position": pos, "value": ovr*25000})
+                val = calculate_player_value(ovr)
+                cards.append({"name": n, "image": img, "overall": ovr, "position": pos, "value": val})
                 names.append(n.lower())
                 added.append(n)
             else:
@@ -1273,7 +1309,7 @@ async def obter_cmd(ctx):
     
     pesos = []
     for p in livres:
-        ovr = p.get('overall', 60)
+        ovr = p.get('overall', 70)
         if ovr >= 90: pesos.append(3)      
         elif ovr >= 80: pesos.append(12)   
         elif ovr >= 75: pesos.append(25)   
@@ -1285,9 +1321,9 @@ async def obter_cmd(ctx):
         buf = await asyncio.to_thread(render_single_card_sync, p)
         
     raridade = "🥉 Bronze"
-    if p.get('overall', 60) >= 90: raridade = "✨ LENDÁRIO"
-    elif p.get('overall', 60) >= 80: raridade = "🥇 Ouro"
-    elif p.get('overall', 60) >= 75: raridade = "🥈 Prata"
+    if p.get('overall', 70) >= 90: raridade = "✨ LENDÁRIO"
+    elif p.get('overall', 70) >= 80: raridade = "🥇 Ouro"
+    elif p.get('overall', 70) >= 75: raridade = "🥈 Prata"
     
     view = KeepOrSellView(ctx.author, p)
     msg = await ctx.send(content=f"🃏 **OLHEIRO DA EFL:** Você encontrou um talento **{raridade}** solto pelo mundo!\n*(Você tem 60 segundos para escolher ou ele irá para o seu elenco automaticamente)*", file=discord.File(buf, "card.png"), view=view)
@@ -1439,7 +1475,7 @@ async def help_cmd(ctx):
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 32.0 - Desenvolvido exclusivamente para a EFL")
+    emb.set_footer(text="Versão 32.3 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
