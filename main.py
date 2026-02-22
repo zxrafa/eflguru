@@ -1,19 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 33.0 (A MURALHA INQUEBRÁVEL - SISTEMA DE OLHEIRO/PENEIRA)
+EFL Guru - Versão 34.0 (A MURALHA INQUEBRÁVEL - AUTO-ESCALAR E LIVE UPDATE)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Formatação original preservada. NENHUMA linha comprimida.
+- NOVO BOTÃO AUTO-ESCALAR: Preenche a prancheta com os melhores do elenco.
+- LIVE UPDATE NA PRANCHETA: Mudar tática, limpar, auto-escalar ou escolher capitão agora atualiza a imagem em tempo real na mesma mensagem.
 - SISTEMA ANALYZEMEMBERS: Comando secreto para filtrar e cadastrar membros em massa.
-  * Filtra cargo específico.
-  * Ignora quem tem "EFL" no nick.
-  * Ignora quem já tá no DB.
-  * Interface com paginação dinâmica e auto-avanço ao cadastrar.
 - FIX DE ESPAÇAMENTO: Altura da imagem ampliada para 1240px.
 - FIX GOLEIRO: Carta do PO descida para não sobrepor com os DFCs.
 - OVR MÍNIMO: Base do sistema ajustada de 60 para 70.
 - NOVA ECONOMIA: Saldo inicial reduzido para 1.000.000 (1 Milhão).
 - VALORIZAÇÃO DE OVR: Cálculo de valor exponencial.
-- TEAM MANAGER: Opções interativas no --team.
 ----------------------------------------------------------------------
 """
 
@@ -411,7 +408,6 @@ class AnalyzeAddModal(discord.ui.Modal, title='Cadastrar no DB'):
                 
             await inter.response.send_message(f"✅ **{self.rbx_name}** adicionado ao banco global!", ephemeral=True)
             
-            # Remove o atual e atualiza a view para o próximo
             self.view_instance.queue.pop(self.view_instance.index)
             
             if self.view_instance.index >= len(self.view_instance.queue):
@@ -623,12 +619,10 @@ def fetch_and_parse_players():
             
             needs_update = False
             for p in comunidade:
-                # Migração de Posicao
                 if p.get('position') in POS_MIGRATION:
                     p['position'] = POS_MIGRATION[p['position']]
                     needs_update = True
                 
-                # Migração de Valor/Economia Exponencial
                 correct_val = calculate_player_value(p.get('overall', 70))
                 if p.get('value', 0) != correct_val:
                     p['value'] = correct_val
@@ -869,13 +863,18 @@ async def generate_team_image(user_data, user):
     
     return await asyncio.to_thread(create_team_image_sync, team_players, club_name, club_sigla, money, formation, captain)
 
-# --- 7. CLASSES DE INTERAÇÃO (VIEWS E TEAM MANAGER) ---
+# --- 7. CLASSES DE INTERAÇÃO E TEAM MANAGER ---
 
 class TeamManagerView(discord.ui.View):
     def __init__(self, ctx, user_data):
         super().__init__(timeout=300)
         self.ctx = ctx
         self.user_data = user_data
+
+    async def refresh_board(self, inter, content_msg):
+        """Atualiza a imagem da prancheta na hora, sem mandar outra mensagem"""
+        buf = await generate_team_image(self.user_data, self.ctx.author)
+        await inter.message.edit(content=content_msg, attachments=[discord.File(buf, "team.png")], view=self)
 
     @discord.ui.select(placeholder="📋 Mudar Formação", min_values=1, max_values=1, options=[
         discord.SelectOption(label="4-3-3 (Padrão)", value="4-3-3", description="Ataque total com 3 Meias e 3 DC"),
@@ -884,6 +883,8 @@ class TeamManagerView(discord.ui.View):
     ])
     async def select_formation(self, inter: discord.Interaction, select: discord.ui.Select):
         if inter.user != self.ctx.author: return
+        await inter.response.defer()
+        
         val = select.values[0]
         
         async with data_lock:
@@ -891,9 +892,44 @@ class TeamManagerView(discord.ui.View):
             d['formation'] = val
             d['team'] = [None] * 11 
             await save_user_data(self.ctx.author.id, d)
+            self.user_data = d
             
-        await inter.response.send_message(f"✅ Tática alterada para **{val}**!\n⚠️ *Sua prancheta foi esvaziada para evitar erros de posicionamento. Escale os jogadores novamente com `--escalar`.*", ephemeral=True)
+        await self.refresh_board(inter, f"✅ Tática alterada para **{val}**! Sua prancheta foi limpa para evitar erros de posicionamento.")
+
+    @discord.ui.button(label="⚡ Auto-Escalar", style=discord.ButtonStyle.success)
+    async def btn_autofill(self, inter: discord.Interaction, button: discord.ui.Button):
+        if inter.user != self.ctx.author: return
+        await inter.response.defer()
         
+        async with data_lock:
+            d = await get_user_data(self.ctx.author.id)
+            squad = d.get('squad', [])
+            formation = d.get('formation', '4-3-3')
+            coords, mapping = get_formation_config(formation)
+            
+            sorted_squad = sorted(squad, key=lambda p: get_player_effective_overall(p), reverse=True)
+            new_team = d.get('team', [None] * 11)
+            
+            for p in sorted_squad:
+                if any(x and x['name'] == p['name'] for x in new_team):
+                    continue
+                    
+                pos = p.get('position', '').upper()
+                if pos in POS_MIGRATION: 
+                    pos = POS_MIGRATION[pos]
+                    
+                allowed_slots = mapping.get(pos, [])
+                for slot in allowed_slots:
+                    if new_team[slot] is None:
+                        new_team[slot] = p
+                        break
+                        
+            d['team'] = new_team
+            await save_user_data(self.ctx.author.id, d)
+            self.user_data = d
+            
+        await self.refresh_board(inter, "⚡ **Escalação Automática:** Os melhores jogadores disponíveis no seu elenco foram escalados nas vagas livres!")
+
     @discord.ui.button(label="🎖️ Escolher Capitão", style=discord.ButtonStyle.primary)
     async def btn_captain(self, inter: discord.Interaction, button: discord.ui.Button):
         if inter.user != self.ctx.author: return
@@ -909,12 +945,14 @@ class TeamManagerView(discord.ui.View):
         select = discord.ui.Select(placeholder="Selecione o Capitão", options=options)
         
         async def captain_callback(i: discord.Interaction):
+            await i.response.defer()
             val = select.values[0]
             async with data_lock:
                 d = await get_user_data(self.ctx.author.id)
                 d['captain'] = val
                 await save_user_data(self.ctx.author.id, d)
-            await i.response.send_message(f"🎖️ **{val}** recebeu a braçadeira de Capitão e liderará a equipe!\n*(Dê `--team` de novo para ver o ícone)*", ephemeral=True)
+                self.user_data = d
+            await self.refresh_board(inter, f"🎖️ **{val}** recebeu a braçadeira de Capitão e liderará a equipe em campo!")
             
         select.callback = captain_callback
         view = discord.ui.View()
@@ -925,11 +963,15 @@ class TeamManagerView(discord.ui.View):
     @discord.ui.button(label="🧹 Limpar Prancheta", style=discord.ButtonStyle.danger)
     async def btn_clear(self, inter: discord.Interaction, button: discord.ui.Button):
         if inter.user != self.ctx.author: return
+        await inter.response.defer()
+        
         async with data_lock:
             d = await get_user_data(self.ctx.author.id)
             d['team'] = [None] * 11
             await save_user_data(self.ctx.author.id, d)
-        await inter.response.send_message("✅ Todos os jogadores foram mandados para o banco de reservas!", ephemeral=True)
+            self.user_data = d
+            
+        await self.refresh_board(inter, "✅ Todos os jogadores foram mandados para o banco de reservas!")
 
 
 class MarketPaginator(discord.ui.View):
@@ -1183,7 +1225,7 @@ class ActionView(discord.ui.View):
                     emb = discord.Embed(title="✅ JOGADOR ESCALADO!", description=f"**{p['name']}** agora é o dono da posição na tática {formation}.", color=discord.Color.green())
                     await inter.response.edit_message(embed=emb, attachments=[], view=None)
                 else: 
-                    await inter.response.send_message("❌ Sem vaga livre para essa posição na prancheta.\n💡 Dica: Use `--banco <nome>` para tirar alguém ou mude a formação no `--team`.", ephemeral=True)
+                    await inter.response.send_message("❌ Sem vaga livre para essa posição na prancheta.\n💡 Dica: Use o botão de `⚡ Auto-Escalar`, ou mude a formação da prancheta.", ephemeral=True)
 
 # --- 8. EVENTOS DO BOT ---
 
@@ -1617,7 +1659,7 @@ async def help_cmd(ctx):
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 33.0 - Desenvolvido exclusivamente para a EFL")
+    emb.set_footer(text="Versão 34.0 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
