@@ -1,19 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 32.3 (A MURALHA INQUEBRÁVEL - OVR MÍNIMO 70)
+EFL Guru - Versão 33.0 (A MURALHA INQUEBRÁVEL - SISTEMA DE OLHEIRO/PENEIRA)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Formatação original preservada. NENHUMA linha comprimida.
+- SISTEMA ANALYZEMEMBERS: Comando secreto para filtrar e cadastrar membros em massa.
+  * Filtra cargo específico.
+  * Ignora quem tem "EFL" no nick.
+  * Ignora quem já tá no DB.
+  * Interface com paginação dinâmica e auto-avanço ao cadastrar.
+- FIX DE ESPAÇAMENTO: Altura da imagem ampliada para 1240px.
+- FIX GOLEIRO: Carta do PO descida para não sobrepor com os DFCs.
 - OVR MÍNIMO: Base do sistema ajustada de 60 para 70.
 - NOVA ECONOMIA: Saldo inicial reduzido para 1.000.000 (1 Milhão).
-- VALORIZAÇÃO DE OVR: Cálculo de valor exponencial (Maior OVR = Muito mais caro).
-- AUTO-ATUALIZAÇÃO DE PREÇOS: Corrige o valor de todas as cartas no banco de dados e elencos.
-- FIX GLIPHOS: Emojis removidos do rodapé para evitar os quadrados (tofu).
-- SOMBRA NAS CARTAS: Adicionado Drop Shadow para profundidade no campo.
-- AUTO-RESIZE NOMES: Fonte dos mini-cards diminui automaticamente para não vazar.
-- CAPITÃO SEGURO: Ícone de capitão alterado para [C] evitando bugs de fonte.
-- PRANCHETA HD: Resolução mantida alta e padding das cartas ajustado.
-- TEAM MANAGER: Opções interativas no --team (Mudar Capitão, Tática e Limpar).
-- TÁTICAS DINÂMICAS: Suporte a 4-3-3, 4-4-2 e 3-4-3.
+- VALORIZAÇÃO DE OVR: Cálculo de valor exponencial.
+- TEAM MANAGER: Opções interativas no --team.
 ----------------------------------------------------------------------
 """
 
@@ -91,9 +91,9 @@ def get_formation_config(formation):
     """Retorna as coordenadas HD (x2) e o mapeamento de vagas dependendo da tática"""
     if formation == "4-4-2":
         coords = {
-            0: (420, 970),  # PO
-            1: (120, 790), 2: (320, 800), 3: (520, 800), 4: (720, 790),  # 4 DFC
-            5: (150, 520), 6: (330, 550), 7: (510, 550), 8: (690, 520),  # 4 Meias
+            0: (420, 1060),  # PO descido
+            1: (120, 820), 2: (320, 830), 3: (520, 830), 4: (720, 820),  # 4 DFC alinhados
+            5: (150, 530), 6: (330, 560), 7: (510, 560), 8: (690, 530),  # 4 Meias
             9: (300, 200), 10: (540, 200)  # 2 DC
         }
         mapping = {
@@ -104,9 +104,9 @@ def get_formation_config(formation):
         }
     elif formation == "3-4-3":
         coords = {
-            0: (420, 970),  # PO
-            1: (200, 800), 2: (420, 820), 3: (640, 800),  # 3 DFC
-            4: (150, 520), 5: (330, 550), 6: (510, 550), 7: (690, 520),  # 4 Meias
+            0: (420, 1060),  # PO descido
+            1: (200, 830), 2: (420, 850), 3: (640, 830),  # 3 DFC
+            4: (150, 530), 5: (330, 560), 6: (510, 560), 7: (690, 530),  # 4 Meias
             8: (170, 240), 9: (420, 190), 10: (670, 240)  # 3 DC
         }
         mapping = {
@@ -117,9 +117,9 @@ def get_formation_config(formation):
         }
     else:  # Padrão: 4-3-3 Restrita
         coords = {
-            0: (420, 970),  # PO
-            1: (120, 790), 2: (320, 800), 3: (520, 800), 4: (720, 790),  # 4 DFC
-            5: (200, 520), 6: (420, 550), 7: (640, 520),  # 3 Meias
+            0: (420, 1060),  # PO descido
+            1: (120, 820), 2: (320, 830), 3: (520, 830), 4: (720, 820),  # 4 DFC alinhados
+            5: (200, 530), 6: (420, 560), 7: (640, 530),  # 3 Meias
             8: (170, 240), 9: (420, 190), 10: (670, 240)  # 3 DC
         }
         mapping = {
@@ -372,6 +372,105 @@ class EditPlayerModal(discord.ui.Modal, title='Editar Atleta'):
             await inter.response.send_message(f"✅ **{self.nick}** atualizado para {o} OVR e Posição {p_str}! (A atualização no time dos jogadores ocorrerá automaticamente).")
         except:
             await inter.response.send_message("❌ Erro na edição.", ephemeral=True)
+
+# --- NOVO SISTEMA ANALYZEMEMBERS (MODAL E VIEW) ---
+
+class AnalyzeAddModal(discord.ui.Modal, title='Cadastrar no DB'):
+    def __init__(self, view_instance, rbx_name, img_url):
+        super().__init__()
+        self.view_instance = view_instance
+        self.rbx_name = rbx_name
+        self.img_url = img_url
+        self.ovr = discord.ui.TextInput(label='Overall (OVR)', placeholder='75', min_length=1, max_length=2)
+        self.pos = discord.ui.TextInput(label='Posição (PO, DFC, MDC, DC...)', placeholder='Ex: MC', min_length=2, max_length=3)
+        self.add_item(self.ovr)
+        self.add_item(self.pos)
+
+    async def on_submit(self, inter: discord.Interaction):
+        try:
+            o_int = int(self.ovr.value)
+            p_str = self.pos.value.upper().strip()
+            
+            if p_str in POS_MIGRATION:
+                p_str = POS_MIGRATION[p_str]
+                
+            coords, mapping = get_formation_config("4-3-3")
+            if p_str not in mapping:
+                return await inter.response.send_message(f"❌ Posição `{p_str}` inválida.", ephemeral=True)
+                
+            v_int = calculate_player_value(o_int)
+            new_p = {"name": self.rbx_name, "image": self.img_url, "overall": o_int, "position": p_str, "value": v_int}
+            
+            async with data_lock:
+                res = supabase.table("jogadores").select("data").eq("id", "ROBLOX_CARDS").execute()
+                cards = res.data[0]["data"] if res.data else []
+                cards.append(new_p)
+                supabase.table("jogadores").upsert({"id": "ROBLOX_CARDS", "data": cards}).execute()
+                global ALL_PLAYERS
+                fetch_and_parse_players()
+                
+            await inter.response.send_message(f"✅ **{self.rbx_name}** adicionado ao banco global!", ephemeral=True)
+            
+            # Remove o atual e atualiza a view para o próximo
+            self.view_instance.queue.pop(self.view_instance.index)
+            
+            if self.view_instance.index >= len(self.view_instance.queue):
+                self.view_instance.index = max(0, len(self.view_instance.queue) - 1)
+                
+            await self.view_instance.update_view()
+            
+        except Exception as e:
+            await inter.response.send_message(f"❌ Erro ao salvar: {e}", ephemeral=True)
+
+
+class AnalyzeMembersView(discord.ui.View):
+    def __init__(self, ctx, queue, message):
+        super().__init__(timeout=600)
+        self.ctx = ctx
+        self.queue = queue
+        self.message = message
+        self.index = 0
+
+    async def update_view(self):
+        if not self.queue:
+            emb = discord.Embed(title="✅ Análise Concluída", description="Todos os jogadores da fila foram avaliados ou adicionados.", color=discord.Color.green())
+            await self.message.edit(embed=emb, view=None)
+            return
+
+        p = self.queue[self.index]
+        emb = discord.Embed(title="🔍 Olheiro de Base - Análise", color=discord.Color.purple())
+        emb.add_field(name="📛 Discord", value=p['discord_name'], inline=True)
+        emb.add_field(name="🎮 Roblox Nick", value=f"**{p['nick']}**", inline=True)
+        emb.set_image(url=p['image'])
+        emb.set_footer(text=f"Membro {self.index + 1} de {len(self.queue)} na fila de espera.")
+
+        self.children[0].disabled = (self.index == 0)
+        self.children[1].disabled = (self.index == len(self.queue) - 1)
+        
+        await self.message.edit(embed=emb, view=self)
+
+    @discord.ui.button(label="⏪", style=discord.ButtonStyle.grey)
+    async def prev(self, inter: discord.Interaction, b):
+        if inter.user != self.ctx.author: return
+        await inter.response.defer()
+        self.index -= 1
+        await self.update_view()
+
+    @discord.ui.button(label="⏩", style=discord.ButtonStyle.grey)
+    async def next(self, inter: discord.Interaction, b):
+        if inter.user != self.ctx.author: return
+        await inter.response.defer()
+        self.index += 1
+        await self.update_view()
+
+    @discord.ui.button(label="➕ Cadastrar", style=discord.ButtonStyle.success)
+    async def add(self, inter: discord.Interaction, b):
+        if inter.user != self.ctx.author: return
+        p = self.queue[self.index]
+        modal = AnalyzeAddModal(self, p['nick'], p['image'])
+        await inter.response.send_modal(modal)
+
+# --- SISTEMA DE PARTIDAS CONTINUAÇÃO ---
 
 class MatchInviteView(discord.ui.View):
     def __init__(self, ctx, challenger, opponent, d1, d2):
@@ -657,10 +756,10 @@ def add_player_defaults(player):
         player['training_level'] = 0
     return player
 
-# --- 6. GERADOR DE IMAGEM DA PRANCHETA EM HD (840x1100) COM CORREÇÕES VISUAIS ---
+# --- 6. GERADOR DE IMAGEM DA PRANCHETA EM HD (840x1240) ---
 
 def create_team_image_sync(team_players, club_name, club_sigla, user_money, formation, captain_name):
-    width, height = 840, 1100 
+    width, height = 840, 1240 
     field_img = Image.new("RGB", (width, height), color="#2E7D32")
     draw = ImageDraw.Draw(field_img, "RGBA")
     
@@ -1151,6 +1250,49 @@ def get_roblox_data_sync(username):
         print(f"Erro Roblox API para {username}: {e}")
         return None
 
+@bot.command(name='analyzemembers')
+@commands.has_permissions(administrator=True)
+async def analyze_members_cmd(ctx):
+    """Comando Secreto: Analisa membros de um cargo e permite adicionar um por um."""
+    target_role_id = 1470883144528822420
+    role = ctx.guild.get_role(target_role_id)
+    
+    if not role:
+        return await ctx.send("❌ Cargo alvo não encontrado no servidor.")
+        
+    msg = await ctx.send("⏳ **Iniciando varredura de membros...**\nIsso pode levar alguns segundos, dependendo da quantidade de jogadores e da API do Roblox.")
+    
+    db_names = [p['name'].lower() for p in ALL_PLAYERS]
+    candidates = []
+    
+    for member in role.members:
+        if "EFL" in member.display_name.upper():
+            continue
+            
+        nick = member.display_name.split()[-1].strip()
+        
+        if nick.lower() in db_names:
+            continue
+            
+        candidates.append({"nick": nick, "discord_name": member.display_name})
+        
+    if not candidates:
+        return await msg.edit(content="❌ **Varredura Concluída:** Nenhum membro novo apto encontrado (Todos já cadastrados ou com nome bloqueado).")
+        
+    queue = []
+    for c in candidates:
+        img = await asyncio.to_thread(get_roblox_data_sync, c["nick"])
+        if img:
+            c["image"] = img
+            queue.append(c)
+        await asyncio.sleep(0.5) 
+        
+    if not queue:
+        return await msg.edit(content="❌ **Varredura Concluída:** Nenhuma conta válida encontrada no banco de dados do Roblox.")
+        
+    view = AnalyzeMembersView(ctx, queue, msg)
+    await view.update_view()
+
 @bot.command(name='addplayer')
 @commands.has_permissions(administrator=True)
 async def add_player_cmd(ctx, *, query: str):
@@ -1475,7 +1617,7 @@ async def help_cmd(ctx):
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 32.3 - Desenvolvido exclusivamente para a EFL")
+    emb.set_footer(text="Versão 33.0 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
