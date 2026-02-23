@@ -1,14 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 35.0 (A MURALHA INQUEBRÁVEL - ECONOMIA REALISTA & BOXES)
+EFL Guru - Versão 37.0 (A MURALHA INQUEBRÁVEL - MODO HARDCORE & KILL SWITCH)
 ----------------------------------------------------------------------
 - CÓDIGO BRUTO: Formatação original preservada. NENHUMA linha comprimida.
-- HIPER INFLAÇÃO DE OVERALL: Fórmula ajustada (Preços chegam a 14M no OVR 95).
-- SISTEMA DE CAIXAS (--caixa): Drop diário (12 em 12h) com Bronze, Iron, Gold, Diamond e Master Box.
+- NOVO COMANDO: --disableall (Kill Switch exclusivo para o ID 338704196180115458).
+- NERF ABSURDO DE OVR: Preços agora aumentam 30% por ponto acima do 70 (85 custa 7.6M, 95 custa 105M).
+- NERF NO OLHEIRO: Pesos ajustados. Jogadores 80+ são extremamente raros agora.
+- NERF NAS CAIXAS: Chances de Drop de raridades rebaixadas nas caixas Gold, Diamond e Master.
+- SISTEMA DE CAIXAS (--caixa): Drop diário (12 em 12h).
 - LIVE UPDATE NA PRANCHETA: Mudar tática, limpar ou auto-escalar atualiza a imagem na hora.
 - SISTEMA ANALYZEMEMBERS: Comando secreto para filtrar e cadastrar membros da base.
-- OVR MÍNIMO: Base do sistema ajustada de 60 para 70.
-- NOVA ECONOMIA: Saldo inicial mantido em 1.000.000 (1 Milhão) para ser desafiador.
+- OVR MÍNIMO: Base do sistema mantida em 70.
+- NOVA ECONOMIA: Saldo inicial mantido em 1.000.000 (1 Milhão).
 - AUTO-ATUALIZAÇÃO: O mercado corrige todos os preços instantaneamente ao ligar.
 ----------------------------------------------------------------------
 """
@@ -63,11 +66,11 @@ INITIAL_MONEY = 1000000  # Saldo Inicial: 1 Milhão
 SALE_PERCENTAGE = 0.5
 
 def calculate_player_value(ovr):
-    """Calcula o valor do jogador com curva exponencial agressiva.
-    Ex: 70 = 150k, 80 = ~928k, 90 = ~5.7M, 95 = ~14.3M"""
+    """Calcula o valor do jogador com curva exponencial HARDCORE (+30% por ponto).
+    Ex: 70=150k, 75=556k, 80=2M, 85=7.6M, 90=28M, 95=105M"""
     base_value = 150000
     adjusted_ovr = max(70, ovr)
-    return int(base_value * (1.2 ** (adjusted_ovr - 70)))
+    return int(base_value * (1.3 ** (adjusted_ovr - 70)))
 
 # --- SISTEMA DE FONTE AUTOMÁTICA ---
 FONT_PATH = "EFL_Font.ttf"
@@ -621,10 +624,12 @@ def fetch_and_parse_players():
             
             needs_update = False
             for p in comunidade:
+                # Migração de Posicao
                 if p.get('position') in POS_MIGRATION:
                     p['position'] = POS_MIGRATION[p['position']]
                     needs_update = True
                 
+                # Migração de Valor/Economia Exponencial HARDCORE
                 correct_val = calculate_player_value(p.get('overall', 70))
                 if p.get('value', 0) != correct_val:
                     p['value'] = correct_val
@@ -632,7 +637,7 @@ def fetch_and_parse_players():
             
             if needs_update:
                 supabase.table("jogadores").update({"data": comunidade}).eq("id", "ROBLOX_CARDS").execute()
-                print("🔄 Mercado atualizado automaticamente com as novas nomenclaturas de posição e curva de economia.")
+                print("🔄 Mercado atualizado automaticamente com as novas nomenclaturas de posição e hiper inflação.")
 
             ALL_PLAYERS.extend(comunidade)
             print(f"✅ {len(comunidade)} Cartas carregadas no Mercado.")
@@ -1239,6 +1244,9 @@ async def on_ready():
 @bot.check
 async def maintenance_check(ctx):
     global MAINTENANCE_MODE
+    # Não bloqueia o disableall, mesmo em manutenção
+    if ctx.command and ctx.command.name == 'disableall':
+        return True
     if MAINTENANCE_MODE and not ctx.author.guild_permissions.administrator:
         await ctx.send("🛠️ **SISTEMA EM MANUTENÇÃO.**")
         return False
@@ -1257,6 +1265,30 @@ async def on_command_error(ctx, error):
     print(f"Erro detectado: {error}")
 
 # --- 9. COMANDOS DE ADMINISTRAÇÃO E FIX ROBLOX ---
+
+@bot.command(name='disableall')
+async def disableall_cmd(ctx):
+    """Comando Supremo (Kill Switch): Desliga a versão atual do bot na marra."""
+    meu_id = 338704196180115458
+    
+    if ctx.author.id != meu_id:
+        return await ctx.send("❌ Você não tem a permissão suprema para usar este comando.")
+
+    await ctx.send("⚠️ **ATENÇÃO!** Você está prestes a matar o processo DESTA versão do bot na Render.\nIsso vai evitar que ele fique duplicado na próxima atualização.\n\nPara confirmar, digite exatamente:\n`DESABILITAR EFL GURU BOT`\n*(Você tem 30 segundos)*")
+
+    def check(m):
+        return m.author.id == ctx.author.id and m.channel == ctx.channel
+
+    try:
+        msg = await bot.wait_for('message', check=check, timeout=30.0)
+        if msg.content == "DESABILITAR EFL GURU BOT":
+            await ctx.send("🛑 **Recebido.** Fechando as portas do servidor desta versão e morrendo com honra... Pode mandar a nova versão, mestre!")
+            await bot.close()
+            os._exit(0) # Mata o processo na mesma hora (incluindo a thread do Flask)
+        else:
+            await ctx.send("❌ Confirmação incorreta. O bot continuará online e rodando.")
+    except asyncio.TimeoutError:
+        await ctx.send("⏳ Tempo esgotado. A operação de autodestruição foi cancelada.")
 
 @bot.command(name='lock')
 @commands.has_permissions(administrator=True)
@@ -1459,8 +1491,9 @@ async def sync_cmd(ctx):
 @bot.command(name='caixa')
 @commands.cooldown(1, 43200, commands.BucketType.user)  # 12 horas (12 * 60 * 60)
 async def caixa_cmd(ctx):
+    # Nerf nas chances das caixas de alta raridade
     boxes = ["Bronze", "Iron", "Gold", "Diamond", "Master"]
-    weights = [50, 30, 13, 5, 2]
+    weights = [60, 25, 10, 4, 1] 
     chosen_box = random.choices(boxes, weights=weights, k=1)[0]
     
     async with data_lock:
@@ -1481,25 +1514,27 @@ async def caixa_cmd(ctx):
         elif chosen_box == "Iron":
             money_won = random.randint(100000, 300000)
             emoji = "⚙️"
-            if random.random() < 0.20:
+            if random.random() < 0.10: # Nerf de 20% pra 10%
                 player_won = get_player_by_ovr(70, 74)
         elif chosen_box == "Gold":
             money_won = random.randint(200000, 500000)
             emoji = "🥇"
             chance = random.random()
-            if chance < 0.10: player_won = get_player_by_ovr(80, 89)
-            elif chance < 0.60: player_won = get_player_by_ovr(75, 79)
+            if chance < 0.05: player_won = get_player_by_ovr(80, 84) # Nerf pesadissimo
+            elif chance < 0.35: player_won = get_player_by_ovr(75, 79)
         elif chosen_box == "Diamond":
             money_won = random.randint(500000, 1000000)
             emoji = "💎"
             chance = random.random()
-            if chance < 0.10: player_won = get_player_by_ovr(90, 99)
-            else: player_won = get_player_by_ovr(80, 89)
+            if chance < 0.02: player_won = get_player_by_ovr(90, 99) # Quase impossivel
+            elif chance < 0.20: player_won = get_player_by_ovr(85, 89) 
+            else: player_won = get_player_by_ovr(80, 84) # Mais garantido vir um 80
         elif chosen_box == "Master":
             money_won = random.randint(1000000, 2000000)
             emoji = "🏆"
-            player_won = get_player_by_ovr(90, 99)
-            if not player_won: player_won = get_player_by_ovr(80, 89)
+            chance = random.random()
+            if chance < 0.30: player_won = get_player_by_ovr(90, 99) # Nerfado
+            else: player_won = get_player_by_ovr(85, 89)
             
         u['money'] += money_won
         desc = f"Você abriu uma **{emoji} {chosen_box} Box**!\n\n💵 **Dinheiro:** R$ {money_won:,}"
@@ -1560,13 +1595,15 @@ async def obter_cmd(ctx):
         ctx.command.reset_cooldown(ctx)
         return await ctx.send("❌ Mercado vazio!")
     
+    # NERF ABSURDO NO OLHEIRO
     pesos = []
     for p in livres:
         ovr = p.get('overall', 70)
-        if ovr >= 90: pesos.append(3)      
-        elif ovr >= 80: pesos.append(12)   
-        elif ovr >= 75: pesos.append(25)   
-        else: pesos.append(60)             
+        if ovr >= 90: pesos.append(1)      
+        elif ovr >= 85: pesos.append(4)   
+        elif ovr >= 80: pesos.append(10)   
+        elif ovr >= 75: pesos.append(35)   
+        else: pesos.append(150)             
         
     p = random.choices(livres, weights=pesos, k=1)[0]
     
@@ -1727,8 +1764,8 @@ async def help_cmd(ctx):
     emb.add_field(name="💰 Gestão & Economia", value="`--caixa`, `--cofre`, `--donate`, `--contratar`, `--sell`, `--obter`, `--jogadores`", inline=False)
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
-    emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock` ")
-    emb.set_footer(text="Versão 35.0 - Desenvolvido exclusivamente para a EFL")
+    emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock`, `--disableall` ", inline=False)
+    emb.set_footer(text="Versão 37.0 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
