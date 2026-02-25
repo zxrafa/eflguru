@@ -1,18 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 37.0 (A MURALHA INQUEBRÁVEL - MODO HARDCORE & KILL SWITCH)
+EFL Guru - Versão 38.0 (A REVOLUÇÃO VISUAL & ECONOMIA CONTROLADA)
 ----------------------------------------------------------------------
-- CÓDIGO BRUTO: Formatação original preservada. NENHUMA linha comprimida.
-- NOVO COMANDO: --disableall (Kill Switch exclusivo para o ID 338704196180115458).
-- NERF ABSURDO DE OVR: Preços agora aumentam 30% por ponto acima do 70 (85 custa 7.6M, 95 custa 105M).
-- NERF NO OLHEIRO: Pesos ajustados. Jogadores 80+ são extremamente raros agora.
-- NERF NAS CAIXAS: Chances de Drop de raridades rebaixadas nas caixas Gold, Diamond e Master.
-- SISTEMA DE CAIXAS (--caixa): Drop diário (12 em 12h).
-- LIVE UPDATE NA PRANCHETA: Mudar tática, limpar ou auto-escalar atualiza a imagem na hora.
-- SISTEMA ANALYZEMEMBERS: Comando secreto para filtrar e cadastrar membros da base.
-- OVR MÍNIMO: Base do sistema mantida em 70.
-- NOVA ECONOMIA: Saldo inicial mantido em 1.000.000 (1 Milhão).
-- AUTO-ATUALIZAÇÃO: O mercado corrige todos os preços instantaneamente ao ligar.
+- CÓDIGO COMPLETO: Nenhuma linha removida.
+- NOVO VISUAL DAS CARTAS: Fundo retrabalhado. As linhas pretas feias foram removidas.
+  Agora possui um gradiente radial premium e um padrão sutil de fundo para todas as raridades.
+  Preparado estruturalmente para futuros tipos de cartas (Icons, etc).
+- ADMINISTRAÇÃO DE ECONOMIA: Novos comandos exclusivos para os IDs 338704196180115458 e 1076957467935789056.
+  --addmoney <usuario> <valor>
+  --removemoney <usuario> <valor>
+- COOLDOWN DO '--obter': Reduzido de 15 minutos para 10 minutos (600 segundos).
+- COOLDOWNS PERSISTENTES: Os tempos de recarga dos comandos '--caixa' e '--obter' AGORA SÃO SALVOS NO BANCO DE DADOS (Supabase).
+  Eles não resetam mais quando o bot reinicia.
 ----------------------------------------------------------------------
 """
 
@@ -32,6 +31,7 @@ from dotenv import load_dotenv
 from supabase import create_client
 from flask import Flask
 from threading import Thread
+import math
 
 # --- 0. SISTEMA WEB (ANTI-SONO PARA A RENDER) ---
 app = Flask('')
@@ -64,6 +64,9 @@ else:
 BOT_PREFIX = "--"
 INITIAL_MONEY = 1000000  # Saldo Inicial: 1 Milhão
 SALE_PERCENTAGE = 0.5
+
+# IDs autorizados a mexer na economia
+ECONOMY_ADMINS = [338704196180115458, 1076957467935789056]
 
 def calculate_player_value(ovr):
     """Calcula o valor do jogador com curva exponencial HARDCORE (+30% por ponto).
@@ -195,53 +198,83 @@ ACHIEVEMENTS = {
 }
 
 # --- 3. MOTOR GRÁFICO (CARD RENDER GERAL) ---
+# Atualizado para remover as linhas pretas e melhorar o fundo
 
 def render_single_card_sync(player):
-    """Gera uma imagem de card individual estilo EA FC com fade e fontes robustas"""
+    """Gera uma imagem de card individual estilo EA FC com novo fundo premium e sem linhas feias"""
     c_w, c_h = 300, 450
     card = Image.new("RGBA", (c_w, c_h), (0, 0, 0, 0))
     
     ovr = player.get('overall', 70)
     
-    if ovr >= 90: # Special
-        c_top = (70, 15, 90)
-        c_bot = (30, 5, 40)
-        border_color = "#f39c12"
+    # Definição de Cores Premium
+    if ovr >= 90: # Special/Master
+        c_primary = (70, 15, 90) # Roxo escuro
+        c_secondary = (30, 5, 40) # Roxo quase preto
+        border_color = "#f39c12" # Laranja/Dourado
         txt_color = "#f1c40f"
     elif ovr >= 80: # Gold
-        c_top = (60, 50, 20)
-        c_bot = (20, 18, 5)
+        c_primary = (184, 134, 11) # Dourado escuro
+        c_secondary = (60, 50, 20) # Marrom dourado
         border_color = "#f1c40f"
         txt_color = "white"
     elif ovr >= 75: # Prata
-        c_top = (85, 85, 85)
-        c_bot = (30, 30, 30)
+        c_primary = (149, 165, 166) # Prata azulado
+        c_secondary = (50, 50, 50) # Cinza escuro
         border_color = "#bdc3c7"
         txt_color = "white"
     else: # Bronze
-        c_top = (100, 70, 45)
-        c_bot = (40, 25, 15)
+        c_primary = (160, 82, 45) # Bronze avermelhado
+        c_secondary = (60, 30, 15) # Marrom escuro
         border_color = "#cd7f32"
         txt_color = "white"
 
-    bg_img = Image.new("RGBA", (c_w, c_h))
-    draw_bg = ImageDraw.Draw(bg_img)
-    for y in range(c_h):
-        r = int(c_top[0] + (c_bot[0] - c_top[0]) * (y / c_h))
-        g = int(c_top[1] + (c_bot[1] - c_top[1]) * (y / c_h))
-        b = int(c_top[2] + (c_bot[2] - c_top[2]) * (y / c_h))
-        draw_bg.line([(0, y), (c_w, y)], fill=(r, g, b, 255))
-        
-    draw_bg.line([(0, 150), (c_w, 100)], fill=(255, 255, 255, 15), width=40)
-    draw_bg.line([(0, 300), (c_w, 250)], fill=(255, 255, 255, 10), width=60)
+    # --- NOVO GERADOR DE FUNDO ---
+    bg_img = Image.new("RGBA", (c_w, c_h), c_secondary)
+    draw_bg = ImageDraw.Draw(bg_img, "RGBA")
 
+    # 1. Gradiente Radial Suave (Centro-Topo)
+    center_x, center_y = c_w // 2, c_h // 3
+    max_radius = int(math.sqrt(c_w**2 + c_h**2))
+    for r in range(max_radius, 0, -2):
+        alpha = int(255 * (1 - (r / max_radius)**1.5)) # Fade não linear
+        
+        # Interpolação de cor entre primária e secundária
+        ratio = r / max_radius
+        r_val = int(c_primary[0] * (1-ratio) + c_secondary[0] * ratio)
+        g_val = int(c_primary[1] * (1-ratio) + c_secondary[1] * ratio)
+        b_val = int(c_primary[2] * (1-ratio) + c_secondary[2] * ratio)
+        
+        draw_bg.ellipse(
+            (center_x - r, center_y - r*0.8, center_x + r, center_y + r*1.2),
+            fill=(r_val, g_val, b_val, max(50, alpha))
+        )
+
+    # 2. Padrão Sutil de Textura (Diamantes)
+    pattern_color = (255, 255, 255, 15) if ovr >= 80 else (0, 0, 0, 25)
+    spacing = 30
+    for x in range(0, c_w + spacing, spacing):
+        for y in range(0, c_h + spacing, spacing):
+            offset = (spacing // 2) if (y // spacing) % 2 == 0 else 0
+            draw_bg.polygon([
+                (x + offset, y - 5),
+                (x + offset + 5, y),
+                (x + offset, y + 5),
+                (x + offset - 5, y)
+            ], fill=pattern_color)
+            
+    # --- FIM DO NOVO FUNDO ---
+
+    # Aplica máscara de cantos arredondados ao fundo
     mask = Image.new("L", (c_w, c_h), 0)
     ImageDraw.Draw(mask).rounded_rectangle([5, 5, c_w-5, c_h-5], radius=25, fill=255)
     card.paste(bg_img, (0, 0), mask)
     
     draw = ImageDraw.Draw(card)
+    # Borda externa
     draw.rounded_rectangle([5, 5, c_w-5, c_h-5], radius=25, outline=border_color, width=6)
     
+    # Renderização do Jogador (Mantida)
     try:
         p_img_res = requests.get(player["image"], timeout=5)
         p_img = Image.open(BytesIO(p_img_res.content)).convert("RGBA")
@@ -264,10 +297,12 @@ def render_single_card_sync(player):
                 a_data[x, y] = int((a_data[x, y] * f_data[x, y]) / 255)
         
         p_img = Image.merge("RGBA", (r_c, g_c, b_c, a_c))
+        # Cola o jogador sobre o fundo novo
         card.paste(p_img, (int(c_w/2 - 120), 80), p_img)
     except Exception:
         pass
 
+    # Textos e Elementos Gráficos Superiores
     try:
         f_ovr = ImageFont.truetype(FONT_PATH, 90)
         f_pos = ImageFont.truetype(FONT_PATH, 45)
@@ -277,8 +312,10 @@ def render_single_card_sync(player):
     draw.text((35, 30), str(ovr), font=f_ovr, fill=border_color, anchor="la")
     draw.text((35, 120), player['position'], font=f_pos, fill="white", anchor="la")
     
+    # Barra separadora inferior
     draw.line([40, 310, c_w-40, 310], fill=border_color, width=2)
     
+    # Nome do Jogador
     nome_cru = player['name'].split()[-1].upper()
     max_text_width = c_w - 40
     current_font_size = 50 
@@ -292,6 +329,7 @@ def render_single_card_sync(player):
         f_name = ImageFont.load_default()
 
     draw.text((c_w/2, 345), nome_cru, font=f_name, fill=txt_color, anchor="mm")
+    # Barra decorativa final
     draw.line([c_w/2 - 50, 385, c_w/2 + 50, 385], fill=border_color, width=4)
 
     buf = BytesIO()
@@ -661,7 +699,9 @@ async def get_user_data(user_id):
                 "club_name": None,
                 "club_sigla": "EFL",
                 "formation": "4-3-3",
-                "captain": None
+                "captain": None,
+                "last_caixa_use": None, # Novo: Cooldown persistente
+                "last_obter_use": None  # Novo: Cooldown persistente
             }
             supabase.table("jogadores").insert({"id": uid, "data": initial}).execute()
             return initial
@@ -670,7 +710,8 @@ async def get_user_data(user_id):
         defaults = [
             ("losses", 0), ("achievements", []), ("match_history", []), 
             ("contracted_players", []), ("club_name", None), ("club_sigla", "EFL"),
-            ("formation", "4-3-3"), ("captain", None)
+            ("formation", "4-3-3"), ("captain", None),
+            ("last_caixa_use", None), ("last_obter_use", None)
         ]
         for key, val in defaults:
             if key not in data: 
@@ -1486,17 +1527,75 @@ async def sync_cmd(ctx):
     fetch_and_parse_players()
     await ctx.send(f"✅ Memória RAM sincronizada! **{len(ALL_PLAYERS)}** cartas prontas.")
 
+# --- NOVOS COMANDOS DE ADMINISTRAÇÃO DE ECONOMIA ---
+
+def is_economy_admin():
+    async def predicate(ctx):
+        return ctx.author.id in ECONOMY_ADMINS
+    return commands.check(predicate)
+
+@bot.command(name='addmoney')
+@is_economy_admin()
+async def addmoney_cmd(ctx, target: discord.User, amount: int):
+    """Adiciona dinheiro à conta de um usuário (Apenas Admins de Economia)."""
+    if amount <= 0:
+        return await ctx.send("❌ O valor deve ser positivo.")
+        
+    async with data_lock:
+        u_data = await get_user_data(target.id)
+        u_data['money'] += amount
+        await save_user_data(target.id, u_data)
+        
+    await ctx.send(f"✅ **ADMIN:** Adicionado R$ {amount:,} à conta de {target.mention}.\nNovo saldo: R$ {u_data['money']:,}")
+
+@bot.command(name='removemoney')
+@is_economy_admin()
+async def removemoney_cmd(ctx, target: discord.User, amount: int):
+    """Remove dinheiro da conta de um usuário (Apenas Admins de Economia)."""
+    if amount <= 0:
+        return await ctx.send("❌ O valor deve ser positivo.")
+        
+    async with data_lock:
+        u_data = await get_user_data(target.id)
+        u_data['money'] = max(0, u_data['money'] - amount) # Evita saldo negativo
+        await save_user_data(target.id, u_data)
+        
+    await ctx.send(f"✅ **ADMIN:** Removido R$ {amount:,} da conta de {target.mention}.\nNovo saldo: R$ {u_data['money']:,}")
+
 # --- 10. COMANDOS DO JOGO E GESTÃO ---
 
 @bot.command(name='caixa')
-@commands.cooldown(1, 43200, commands.BucketType.user)  # 12 horas (12 * 60 * 60)
+# Cooldown removido aqui para ser gerenciado manualmente com persistência
 async def caixa_cmd(ctx):
+    # --- VERIFICAÇÃO DE COOLDOWN PERSISTENTE ---
+    async with data_lock:
+        u = await get_user_data(ctx.author.id)
+        last_use_str = u.get('last_caixa_use')
+        now = datetime.utcnow()
+        cooldown_seconds = 43200 # 12 horas
+
+        if last_use_str:
+            last_use = datetime.fromisoformat(last_use_str)
+            time_passed = (now - last_use).total_seconds()
+            if time_passed < cooldown_seconds:
+                remaining = cooldown_seconds - time_passed
+                horas = int(remaining // 3600)
+                minutos = int((remaining % 3600) // 60)
+                segundos = int(remaining % 60)
+                return await ctx.send(f"⏳ **Calma aí, chefinho!** A caixa diária ainda está fechada.\n\nTente novamente em **{horas}h {minutos}m {segundos}s**.")
+        
+        # Se passou do tempo ou é a primeira vez, atualiza o tempo
+        u['last_caixa_use'] = now.isoformat()
+        await save_user_data(ctx.author.id, u)
+    # --- FIM DA VERIFICAÇÃO ---
+
     # Nerf nas chances das caixas de alta raridade
     boxes = ["Bronze", "Iron", "Gold", "Diamond", "Master"]
     weights = [60, 25, 10, 4, 1] 
     chosen_box = random.choices(boxes, weights=weights, k=1)[0]
     
     async with data_lock:
+        # Recarrega dados atualizados após salvar o cooldown
         u = await get_user_data(ctx.author.id)
         livres = [p for p in ALL_PLAYERS if p["name"] not in u["contracted_players"]]
         
@@ -1580,35 +1679,61 @@ async def setclube_cmd(ctx, sigla: str, *, nome: str):
     await ctx.send(f"✅ Identidade do clube atualizada: **[{d['club_sigla']}] {d['club_name']}**")
 
 async def reminder_task(ctx, user):
-    await asyncio.sleep(900)
+    # Cooldown agora é 10 minutos (600s)
+    await asyncio.sleep(600)
     try: 
         await ctx.send(f"⏰ <@{user.id}>, seu olheiro voltou! O comando `{BOT_PREFIX}obter` já está liberado novamente.")
     except: 
         pass
 
 @bot.command(name='obter')
-@commands.cooldown(1, 900, commands.BucketType.user)
+# Cooldown removido aqui para ser gerenciado manualmente com persistência
 async def obter_cmd(ctx):
-    u = await get_user_data(ctx.author.id)
-    livres = [p for p in ALL_PLAYERS if p["name"] not in u["contracted_players"]]
-    if not livres: 
-        ctx.command.reset_cooldown(ctx)
-        return await ctx.send("❌ Mercado vazio!")
-    
-    # NERF ABSURDO NO OLHEIRO
-    pesos = []
-    for p in livres:
-        ovr = p.get('overall', 70)
-        if ovr >= 90: pesos.append(1)      
-        elif ovr >= 85: pesos.append(4)   
-        elif ovr >= 80: pesos.append(10)   
-        elif ovr >= 75: pesos.append(35)   
-        else: pesos.append(150)             
+    # --- VERIFICAÇÃO DE COOLDOWN PERSISTENTE ---
+    async with data_lock:
+        u = await get_user_data(ctx.author.id)
+        last_use_str = u.get('last_obter_use')
+        now = datetime.utcnow()
+        cooldown_seconds = 600 # 10 minutos (Reduzido de 15)
+
+        if last_use_str:
+            last_use = datetime.fromisoformat(last_use_str)
+            time_passed = (now - last_use).total_seconds()
+            if time_passed < cooldown_seconds:
+                remaining = cooldown_seconds - time_passed
+                minutos = int((remaining % 3600) // 60)
+                segundos = int(remaining % 60)
+                return await ctx.send(f"⏳ **Calma aí, chefinho!** O olheiro está descansando.\n\nTente novamente em **{minutos}m {segundos}s**.")
         
-    p = random.choices(livres, weights=pesos, k=1)[0]
-    
-    async with image_lock: 
-        buf = await asyncio.to_thread(render_single_card_sync, p)
+        # Se passou do tempo ou é a primeira vez, atualiza o tempo
+        u['last_obter_use'] = now.isoformat()
+        await save_user_data(ctx.author.id, u)
+    # --- FIM DA VERIFICAÇÃO ---
+
+    async with data_lock:
+        # Recarrega dados atualizados
+        u = await get_user_data(ctx.author.id)
+        livres = [p for p in ALL_PLAYERS if p["name"] not in u["contracted_players"]]
+        if not livres: 
+            # Se não tem jogador, não gastou o cooldown real, então reseta o tempo no banco
+            u['last_obter_use'] = None
+            await save_user_data(ctx.author.id, u)
+            return await ctx.send("❌ Mercado vazio! (Seu tempo de recarga não foi gasto).")
+        
+        # NERF ABSURDO NO OLHEIRO
+        pesos = []
+        for p in livres:
+            ovr = p.get('overall', 70)
+            if ovr >= 90: pesos.append(1)       
+            elif ovr >= 85: pesos.append(4)    
+            elif ovr >= 80: pesos.append(10)    
+            elif ovr >= 75: pesos.append(35)    
+            else: pesos.append(150)              
+            
+        p = random.choices(livres, weights=pesos, k=1)[0]
+        
+        async with image_lock: 
+            buf = await asyncio.to_thread(render_single_card_sync, p)
         
     raridade = "🥉 Bronze"
     if p.get('overall', 70) >= 90: raridade = "✨ LENDÁRIO"
@@ -1764,8 +1889,8 @@ async def help_cmd(ctx):
     emb.add_field(name="💰 Gestão & Economia", value="`--caixa`, `--cofre`, `--donate`, `--contratar`, `--sell`, `--obter`, `--jogadores`", inline=False)
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
-    emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock`, `--disableall` ", inline=False)
-    emb.set_footer(text="Versão 37.0 - Desenvolvido exclusivamente para a EFL")
+    emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock`, `--disableall`, `--addmoney`, `--removemoney` ", inline=False)
+    emb.set_footer(text="Versão 38.0 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
