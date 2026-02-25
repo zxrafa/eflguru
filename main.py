@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 38.0 (A REVOLUÇÃO VISUAL & ECONOMIA CONTROLADA)
+EFL Guru - Versão 39.0 (A REVOLUÇÃO VISUAL DEFINITIVA - ESTILO FIFA 24)
 ----------------------------------------------------------------------
 - CÓDIGO COMPLETO: Nenhuma linha removida.
-- NOVO VISUAL DAS CARTAS: Fundo retrabalhado. As linhas pretas feias foram removidas.
-  Agora possui um gradiente radial premium e um padrão sutil de fundo para todas as raridades.
-  Preparado estruturalmente para futuros tipos de cartas (Icons, etc).
-- ADMINISTRAÇÃO DE ECONOMIA: Novos comandos exclusivos para os IDs 338704196180115458 e 1076957467935789056.
+- NOVO VISUAL DAS CARTAS: O gerador de cartas foi completamente reescrito para replicar o estilo
+  visual da imagem de referência (FIFA 24 Silver).
+  - Borda metálica 3D detalhada.
+  - Fundo degradê prateado com padrão de diamantes sutil (atrás do jogador).
+  - Textos (OVR, Posição, Nome) com efeitos de sombra e relevo metálico.
+  - O avatar do jogador agora tem um contorno/brilho sutil e não é afetado pelo padrão do fundo.
+- ADMINISTRAÇÃO DE ECONOMIA: Comandos exclusivos para os IDs 338704196180115458 e 1076957467935789056.
   --addmoney <usuario> <valor>
   --removemoney <usuario> <valor>
-- COOLDOWN DO '--obter': Reduzido de 15 minutos para 10 minutos (600 segundos).
-- COOLDOWNS PERSISTENTES: Os tempos de recarga dos comandos '--caixa' e '--obter' AGORA SÃO SALVOS NO BANCO DE DADOS (Supabase).
-  Eles não resetam mais quando o bot reinicia.
+- COOLDOWN DO '--obter': Mantido em 10 minutos (600 segundos).
+- COOLDOWNS PERSISTENTES: Salvos no Supabase para não resetar com o bot.
 ----------------------------------------------------------------------
 """
 
@@ -24,7 +26,7 @@ import asyncio
 import unicodedata
 import sys
 import time
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageFilter
 from io import BytesIO
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -197,140 +199,142 @@ ACHIEVEMENTS = {
     "primeira_vitoria": {"name": "Primeira Vitória", "desc": "Vença sua primeira partida na EFL.", "emoji": "🏆"}
 }
 
-# --- 3. MOTOR GRÁFICO (CARD RENDER GERAL) ---
-# Atualizado para remover as linhas pretas e melhorar o fundo
+# --- 3. MOTOR GRÁFICO (CARD RENDER GERAL - ESTILO FIFA 24) ---
+
+def draw_metallic_text(draw, pos, text, font, base_color, shadow_color, highlight_color, anchor):
+    """Função auxiliar para desenhar texto com efeito metálico 3D"""
+    x, y = pos
+    # Sombra
+    draw.text((x + 2, y + 2), text, font=font, fill=shadow_color, anchor=anchor)
+    # Base
+    draw.text((x, y), text, font=font, fill=base_color, anchor=anchor)
+    # Realce (sutil, deslocado para cima e esquerda)
+    draw.text((x - 1, y - 1), text, font=font, fill=highlight_color, anchor=anchor)
 
 def render_single_card_sync(player):
-    """Gera uma imagem de card individual estilo EA FC com novo fundo premium e sem linhas feias"""
+    """Gera uma imagem de card individual no estilo exato do FIFA 24 Silver"""
     c_w, c_h = 300, 450
     card = Image.new("RGBA", (c_w, c_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(card)
     
     ovr = player.get('overall', 70)
     
-    # Definição de Cores Premium
-    if ovr >= 90: # Special/Master
-        c_primary = (70, 15, 90) # Roxo escuro
-        c_secondary = (30, 5, 40) # Roxo quase preto
-        border_color = "#f39c12" # Laranja/Dourado
-        txt_color = "#f1c40f"
+    # Cores Baseadas na Raridade (Foco no Prata/Silver)
+    if ovr >= 90: # Special
+        c_top = (70, 15, 90); c_bot = (30, 5, 40)
     elif ovr >= 80: # Gold
-        c_primary = (184, 134, 11) # Dourado escuro
-        c_secondary = (60, 50, 20) # Marrom dourado
-        border_color = "#f1c40f"
-        txt_color = "white"
-    elif ovr >= 75: # Prata
-        c_primary = (149, 165, 166) # Prata azulado
-        c_secondary = (50, 50, 50) # Cinza escuro
-        border_color = "#bdc3c7"
-        txt_color = "white"
+        c_top = (184, 134, 11); c_bot = (60, 50, 20)
+    elif ovr >= 75: # Silver (Estilo da Imagem)
+        c_top = (192, 192, 192); c_bot = (128, 128, 128)
     else: # Bronze
-        c_primary = (160, 82, 45) # Bronze avermelhado
-        c_secondary = (60, 30, 15) # Marrom escuro
-        border_color = "#cd7f32"
-        txt_color = "white"
+        c_top = (160, 82, 45); c_bot = (60, 30, 15)
 
-    # --- NOVO GERADOR DE FUNDO ---
-    bg_img = Image.new("RGBA", (c_w, c_h), c_secondary)
-    draw_bg = ImageDraw.Draw(bg_img, "RGBA")
-
-    # 1. Gradiente Radial Suave (Centro-Topo)
-    center_x, center_y = c_w // 2, c_h // 3
-    max_radius = int(math.sqrt(c_w**2 + c_h**2))
-    for r in range(max_radius, 0, -2):
-        alpha = int(255 * (1 - (r / max_radius)**1.5)) # Fade não linear
+    # --- 1. FUNDO DEGRADÊ E PADRÃO DE DIAMANTES ---
+    bg_img = Image.new("RGBA", (c_w, c_h))
+    draw_bg = ImageDraw.Draw(bg_img)
+    
+    # Gradiente Linear Vertical Suave
+    for y in range(c_h):
+        ratio = y / c_h
+        r = int(c_top[0] * (1 - ratio) + c_bot[0] * ratio)
+        g = int(c_top[1] * (1 - ratio) + c_bot[1] * ratio)
+        b = int(c_top[2] * (1 - ratio) + c_bot[2] * ratio)
+        draw_bg.line([(0, y), (c_w, y)], fill=(r, g, b, 255))
         
-        # Interpolação de cor entre primária e secundária
-        ratio = r / max_radius
-        r_val = int(c_primary[0] * (1-ratio) + c_secondary[0] * ratio)
-        g_val = int(c_primary[1] * (1-ratio) + c_secondary[1] * ratio)
-        b_val = int(c_primary[2] * (1-ratio) + c_secondary[2] * ratio)
-        
-        draw_bg.ellipse(
-            (center_x - r, center_y - r*0.8, center_x + r, center_y + r*1.2),
-            fill=(r_val, g_val, b_val, max(50, alpha))
-        )
-
-    # 2. Padrão Sutil de Textura (Diamantes)
-    pattern_color = (255, 255, 255, 15) if ovr >= 80 else (0, 0, 0, 25)
-    spacing = 30
+    # Padrão de Diamantes Sutil (Atrás do jogador)
+    pattern_color = (255, 255, 255, 30) # Branco translúcido
+    spacing = 25
     for x in range(0, c_w + spacing, spacing):
         for y in range(0, c_h + spacing, spacing):
-            offset = (spacing // 2) if (y // spacing) % 2 == 0 else 0
+            offset_x = (spacing // 2) if (y // spacing) % 2 == 0 else 0
+            # Desenha pequenos losangos (diamantes)
             draw_bg.polygon([
-                (x + offset, y - 5),
-                (x + offset + 5, y),
-                (x + offset, y + 5),
-                (x + offset - 5, y)
+                (x + offset_x, y - 4),
+                (x + offset_x + 4, y),
+                (x + offset_x, y + 4),
+                (x + offset_x - 4, y)
             ], fill=pattern_color)
-            
-    # --- FIM DO NOVO FUNDO ---
 
-    # Aplica máscara de cantos arredondados ao fundo
+    # Aplica a máscara de cantos arredondados ao fundo
     mask = Image.new("L", (c_w, c_h), 0)
     ImageDraw.Draw(mask).rounded_rectangle([5, 5, c_w-5, c_h-5], radius=25, fill=255)
     card.paste(bg_img, (0, 0), mask)
-    
-    draw = ImageDraw.Draw(card)
-    # Borda externa
-    draw.rounded_rectangle([5, 5, c_w-5, c_h-5], radius=25, outline=border_color, width=6)
-    
-    # Renderização do Jogador (Mantida)
+
+    # --- 2. JOGADOR (COM CONTORNO/BRILHO) ---
     try:
         p_img_res = requests.get(player["image"], timeout=5)
         p_img = Image.open(BytesIO(p_img_res.content)).convert("RGBA")
         p_img = p_img.resize((240, 240), Image.Resampling.LANCZOS)
         
-        r_c, g_c, b_c, a_c = p_img.split()
-        fade = Image.new("L", (1, p_img.height))
-        for y in range(p_img.height):
-            if y < p_img.height * 0.60:
-                fade.putpixel((0, y), 255)
-            else:
-                alpha = int(255 * (1.0 - (y - p_img.height * 0.60) / (p_img.height * 0.40)))
-                fade.putpixel((0, y), max(0, min(255, alpha)))
+        # Cria um contorno/brilho sutil atrás do jogador
+        glow = p_img.filter(ImageFilter.GaussianBlur(radius=3))
+        # Pinta o contorno de uma cor clara (ex: branco prateado)
+        r, g, b, a = glow.split()
+        glow = Image.merge("RGBA", (Image.new("L", a.size, 220), Image.new("L", a.size, 220), Image.new("L", a.size, 220), a))
         
-        fade = fade.resize(p_img.size)
-        a_data = a_c.load()
-        f_data = fade.load()
-        for y in range(p_img.height):
-            for x in range(p_img.width):
-                a_data[x, y] = int((a_data[x, y] * f_data[x, y]) / 255)
-        
-        p_img = Image.merge("RGBA", (r_c, g_c, b_c, a_c))
-        # Cola o jogador sobre o fundo novo
+        # Cola o brilho e depois o jogador
+        card.paste(glow, (int(c_w/2 - 120), 80), glow)
         card.paste(p_img, (int(c_w/2 - 120), 80), p_img)
     except Exception:
         pass
 
-    # Textos e Elementos Gráficos Superiores
+    # --- 3. BORDA METÁLICA 3D DETALHADA ---
+    # Desenha múltiplos retângulos arredondados com espessuras e cores diferentes
+    # para criar um efeito de bisel (bevel) metálico.
+    border_shades = [
+        (100, 100, 100), # Sombra externa escura
+        (140, 140, 140), # Cinza médio
+        (180, 180, 180), # Cinza claro
+        (220, 220, 220), # Realce brilhante
+        (160, 160, 160)  # Cor principal da borda
+    ]
+    widths = [10, 8, 6, 4, 2] # Espessuras decrescentes
+    
+    for i, shade in enumerate(border_shades):
+        w = widths[i]
+        # Ajusta o retângulo ligeiramente para dentro a cada camada
+        draw.rounded_rectangle([5+i, 5+i, c_w-5-i, c_h-5-i], radius=25-i, outline=shade, width=w)
+
+    # --- 4. TEXTOS COM EFEITO METÁLICO E SOMBRA ---
     try:
         f_ovr = ImageFont.truetype(FONT_PATH, 90)
         f_pos = ImageFont.truetype(FONT_PATH, 45)
+        f_name = ImageFont.truetype(FONT_PATH, 35) # Fonte do nome um pouco menor para caber bem
     except:
-        f_ovr = f_pos = ImageFont.load_default()
+        f_ovr = f_pos = f_name = ImageFont.load_default()
 
-    draw.text((35, 30), str(ovr), font=f_ovr, fill=border_color, anchor="la")
-    draw.text((35, 120), player['position'], font=f_pos, fill="white", anchor="la")
+    # Cores para o efeito metálico dos textos OVR e POS
+    silver_base = (200, 200, 200)
+    silver_shadow = (80, 80, 80)
+    silver_highlight = (240, 240, 240)
+
+    # OVR (Canto Superior Esquerdo)
+    draw_metallic_text(draw, (35, 30), str(ovr), f_ovr, silver_base, silver_shadow, silver_highlight, "la")
     
-    # Barra separadora inferior
-    draw.line([40, 310, c_w-40, 310], fill=border_color, width=2)
-    
-    # Nome do Jogador
+    # Posição (Abaixo do OVR)
+    draw_metallic_text(draw, (35, 120), player['position'], f_pos, silver_base, silver_shadow, silver_highlight, "la")
+
+    # Nome do Jogador (Base Branca com Sombra Escura Forte)
     nome_cru = player['name'].split()[-1].upper()
-    max_text_width = c_w - 40
-    current_font_size = 50 
     
+    # Ajusta o tamanho da fonte se o nome for muito longo
+    max_text_width = c_w - 40
+    current_font_size = 35
     try:
-        f_name = ImageFont.truetype(FONT_PATH, current_font_size)
         while f_name.getlength(nome_cru) > max_text_width and current_font_size > 18:
             current_font_size -= 2
             f_name = ImageFont.truetype(FONT_PATH, current_font_size)
     except:
-        f_name = ImageFont.load_default()
-
-    draw.text((c_w/2, 345), nome_cru, font=f_name, fill=txt_color, anchor="mm")
-    # Barra decorativa final
-    draw.line([c_w/2 - 50, 385, c_w/2 + 50, 385], fill=border_color, width=4)
+        pass
+        
+    # Desenha o nome com uma sombra preta forte e deslocada
+    white_base = (255, 255, 255)
+    dark_shadow = (0, 0, 0)
+    
+    # Sombra
+    draw.text((c_w/2 + 2, 385 + 2), nome_cru, font=f_name, fill=dark_shadow, anchor="mm")
+    # Texto Principal
+    draw.text((c_w/2, 385), nome_cru, font=f_name, fill=white_base, anchor="mm")
 
     buf = BytesIO()
     card.save(buf, format='PNG')
@@ -1694,7 +1698,7 @@ async def obter_cmd(ctx):
         u = await get_user_data(ctx.author.id)
         last_use_str = u.get('last_obter_use')
         now = datetime.utcnow()
-        cooldown_seconds = 600 # 10 minutos (Reduzido de 15)
+        cooldown_seconds = 600 # 10 minutos (Mantido)
 
         if last_use_str:
             last_use = datetime.fromisoformat(last_use_str)
@@ -1890,7 +1894,7 @@ async def help_cmd(ctx):
     emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
     emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
     emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock`, `--disableall`, `--addmoney`, `--removemoney` ", inline=False)
-    emb.set_footer(text="Versão 38.0 - Desenvolvido exclusivamente para a EFL")
+    emb.set_footer(text="Versão 39.0 - Desenvolvido exclusivamente para a EFL")
     await ctx.send(embed=emb)
 
 # --- INICIALIZAÇÃO ---
