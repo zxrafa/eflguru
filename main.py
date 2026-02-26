@@ -1905,3 +1905,4 @@ if __name__ == "__main__":
         bot.run(token)
     else: 
         print("❌ Token ausente no arquivo .env.")
+
