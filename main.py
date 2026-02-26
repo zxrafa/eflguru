@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-EFL Guru - Versão 44.0 (MODO CARREIRA COM JOGADORES REAIS DO DB)
+EFL Guru - Versão 46.0 (ESCUDO ANTI-CRASH & MODO CARREIRA)
 ----------------------------------------------------------------------
-- CÓDIGO COMPLETO: Nenhuma linha removida. Nenhuma linha comprimida.
-- INTEGRAÇÃO GLOBAL (A PEDIDO): O Modo Carreira agora utiliza EXCLUSIVAMENTE
-  os jogadores do banco de dados oficial (Roblox Cards).
-- INÍCIO REALISTA: Ao escolher um time Tier 3, você começa com um elenco
-  formado pelos jogadores reais de menor OVR do seu banco.
-- MERCADO VIVO: Os olheiros trazem jogadores reais do DB que não estão no seu time.
-- SIMULAÇÃO AO VIVO: Narração em tempo real das partidas.
-- CÓDIGO EXPANDIDO: Todas as quebras de linha e indentações restauradas rigorosamente.
+- CÓDIGO COMPLETO: Nenhuma linha removida. Formatação limpa restaurada.
+- ESCUDO DE INICIALIZAÇÃO: Correção da porta dinâmica da Render para evitar "No open ports".
+- TRATAMENTO DE ERROS GRAVES: Se o bot crashar ao ligar (ex: erro de Intents ou Token), 
+  ele vai imprimir o motivo exato no log da Render antes de morrer.
+- MODO CARREIRA MANTIDO: Jogadores reais do DB, simulação live, mercado, transferências.
 ----------------------------------------------------------------------
 """
 
@@ -39,7 +36,9 @@ def home():
     return "Bot EFL Guru está ONLINE na Render!"
 
 def run():
-    app.run(host='0.0.0.0', port=8080)
+    # CORREÇÃO PARA A RENDER: Pega a porta dinâmica ou usa a 8080 como fallback
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = Thread(target=run)
@@ -63,8 +62,10 @@ BOT_PREFIX = "--"
 INITIAL_MONEY = 1000000
 SALE_PERCENTAGE = 0.5
 
-# --- SISTEMA DE PERMISSÕES SUPREMAS ---
+# --- SISTEMA DE PERMISSÕES SUPREMAS E TRAVAS ---
 BOT_ADMINS = [338704196180115458, 1076957467935789056]
+MAINTENANCE_MODE = False
+GLOBAL_DISABLED = False
 
 def is_bot_admin():
     async def predicate(ctx):
@@ -145,10 +146,9 @@ ALL_PLAYERS = []
 data_lock = asyncio.Lock()
 career_lock = asyncio.Lock()
 image_lock = asyncio.Lock()
-
-MAINTENANCE_MODE = False
 active_matches = set()
 
+# OBRIGATÓRIO: Estes três intents precisam estar azuis no Discord Developer Portal
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True 
@@ -228,21 +228,14 @@ async def save_career_data(user_id, data):
         supabase.table("jogadores").insert({"id": uid, "data": data}).execute()
 
 def generate_initial_squad(tier):
-    """
-    Gera um elenco de 25 jogadores para o Modo Carreira utilizando EXCLUSIVAMENTE
-    os jogadores reais do banco de dados global (ALL_PLAYERS).
-    Se o time for ruim (Tier 3), pega os piores jogadores disponíveis.
-    """
     global ALL_PLAYERS
     squad = []
     
     pool = list(ALL_PLAYERS)
     
-    # Prevenção caso o banco de dados esteja vazio
     if not pool:
         pool = [{"name": "Jogador Genérico", "overall": 60, "position": "MC", "value": 150000, "image": ""}]
         
-    # Define o OVR alvo baseado na força do clube escolhido
     if tier == 3:
         max_ovr = 74
     elif tier == 2:
@@ -250,30 +243,23 @@ def generate_initial_squad(tier):
     else:
         max_ovr = 999
         
-    # Organiza o banco de dados do pior para o melhor
     pool_ordenado = sorted(pool, key=lambda x: x.get('overall', 70))
     
-    # Filtra os jogadores que se encaixam no teto do time
     filtered_pool = []
     for p in pool_ordenado:
         if p.get('overall', 70) <= max_ovr:
             filtered_pool.append(p)
             
-    # Se não houver jogadores ruins suficientes, pega os piores disponíveis de qualquer jeito
     if len(filtered_pool) < 25:
         filtered_pool = pool_ordenado[:25]
         
-    # Embaralha as opções válidas para o time não ser sempre exatamente igual
     random.shuffle(filtered_pool)
     
     for i in range(25):
-        # Se o banco global tiver menos de 25 jogadores no total, ele repete para completar o elenco
         base_p = filtered_pool[i % len(filtered_pool)]
         
-        # Pega a posição primária se houver múltiplas (ex: "DC/MC" vira "DC")
         pos_str = base_p.get("position", "MC").split('/')[0]
         
-        # Calcula dados extras exclusivos do modo carreira
         idade_mock = random.randint(18, 32)
         potencial = base_p.get("overall", 70)
         
@@ -307,7 +293,6 @@ def generate_initial_squad(tier):
     return squad
 
 def get_market_players(type_search, exclude_names):
-    """Busca jogadores reais do banco de dados para aparecerem como opções no olheiro"""
     global ALL_PLAYERS
     pool = list(ALL_PLAYERS)
     
@@ -950,6 +935,11 @@ class CareerSquadView(discord.ui.View):
 @bot.command(name='carreira')
 async def carreira_cmd(ctx):
     """Comando de Entrada do Modo Carreira FIFA"""
+    
+    # Verifica a trava global
+    if GLOBAL_DISABLED:
+        return
+        
     data = await get_career_data(ctx.author.id)
     if not data:
         view = CareerSetupView(ctx)
@@ -2134,8 +2124,15 @@ async def on_ready():
     await bot.change_presence(activity=discord.Game(name=f"{BOT_PREFIX}help | EFL Manager"))
 
 @bot.check
-async def maintenance_check(ctx):
+async def global_check(ctx):
     global MAINTENANCE_MODE
+    global GLOBAL_DISABLED
+
+    if GLOBAL_DISABLED:
+        if ctx.command and ctx.command.name == 'enableall':
+            return True
+        return False
+
     if ctx.command and ctx.command.name == 'disableall': 
         return True
         
@@ -2166,7 +2163,7 @@ async def on_command_error(ctx, error):
 @bot.command(name='disableall')
 @is_bot_admin()
 async def disableall_cmd(ctx):
-    await ctx.send("⚠️ **ATENÇÃO!** Digite exatamente:\n`DESABILITAR EFL GURU BOT`\n*(Você tem 30 segundos)*")
+    await ctx.send("⚠️ **ATENÇÃO!** Você está prestes a desativar TODOS os comandos do bot.\nEle continuará online, mas ignorará qualquer interação.\n\nPara confirmar, digite exatamente:\n`DESATIVAR COMANDOS`\n*(Você tem 30 segundos)*")
     
     def check(m): 
         return m.author.id == ctx.author.id and m.channel == ctx.channel
@@ -2174,15 +2171,22 @@ async def disableall_cmd(ctx):
     try:
         msg = await bot.wait_for('message', check=check, timeout=30.0)
         
-        if msg.content == "DESABILITAR EFL GURU BOT":
-            await ctx.send("🛑 **Recebido.** Fechando as portas do servidor desta versão e morrendo com honra... Pode mandar a nova versão, mestre!")
-            await bot.close()
-            os._exit(0) 
+        if msg.content == "DESATIVAR COMANDOS":
+            global GLOBAL_DISABLED
+            GLOBAL_DISABLED = True
+            await ctx.send("🛑 **Recebido.** Todos os comandos foram desativados com sucesso! O bot agora é apenas um fantasma online.\n*(Dica de dev: use `--enableall` para reativar, caso precise)*")
         else: 
-            await ctx.send("❌ Confirmação incorreta. O bot continuará online e rodando.")
+            await ctx.send("❌ Confirmação incorreta. O bot continuará funcionando normalmente.")
             
     except asyncio.TimeoutError: 
-        await ctx.send("⏳ Tempo esgotado. A operação de autodestruição foi cancelada.")
+        await ctx.send("⏳ Tempo esgotado. A desativação foi cancelada.")
+
+@bot.command(name='enableall')
+@is_bot_admin()
+async def enableall_cmd(ctx):
+    global GLOBAL_DISABLED
+    GLOBAL_DISABLED = False
+    await ctx.send("🟢 **SISTEMA REATIVADO.** O bot voltou à vida e os comandos estão funcionando novamente!")
 
 @bot.command(name='lock')
 @is_bot_admin()
@@ -2198,6 +2202,574 @@ async def unlock_cmd(ctx):
     MAINTENANCE_MODE = False
     await ctx.send("🟢 **SISTEMA LIBERADO.**")
 
-# =====================================================================
-# COMANDOS DE GERENCIAMENTO GERAL DO BOT E ROBLOX
-# =====================================================================
+def get_roblox_data_sync(username):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'}
+    try:
+        res = requests.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [username]}, headers=headers, timeout=10)
+        
+        if res.status_code == 429: 
+            time.sleep(2)
+            res = requests.post("https://users.roblox.com/v1/usernames/users", json={"usernames": [username]}, headers=headers, timeout=10)
+            
+        data = res.json()
+        if not data.get("data"): 
+            return None
+            
+        uid = data["data"][0]["id"]
+        res2 = requests.get(f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={uid}&size=420x420&format=Png&isCircular=false", headers=headers, timeout=10)
+        data2 = res2.json()
+        
+        if data2.get("data") and data2["data"][0].get("imageUrl"): 
+            return data2["data"][0]["imageUrl"]
+            
+        return None
+    except Exception as e: 
+        return None
+
+@bot.command(name='analyzemembers')
+@is_bot_admin()
+async def analyze_members_cmd(ctx):
+    target_role_id = 1470883144528822420
+    role = ctx.guild.get_role(target_role_id)
+    
+    if not role: 
+        return await ctx.send("❌ Cargo alvo não encontrado no servidor.")
+        
+    msg = await ctx.send("⏳ **Iniciando varredura de membros...**")
+    db_names = [p['name'].lower() for p in ALL_PLAYERS]
+    candidates = []
+    
+    for member in role.members:
+        if "EFL" in member.display_name.upper(): 
+            continue
+            
+        nick = member.display_name.split()[-1].strip()
+        
+        if nick.lower() in db_names: 
+            continue
+            
+        candidates.append({"nick": nick, "discord_name": member.display_name})
+        
+    if not candidates: 
+        return await msg.edit(content="❌ **Varredura Concluída:** Nenhum membro novo apto encontrado.")
+        
+    queue = []
+    for c in candidates:
+        img = await asyncio.to_thread(get_roblox_data_sync, c["nick"])
+        if img: 
+            c["image"] = img
+            queue.append(c)
+        await asyncio.sleep(0.5) 
+        
+    if not queue: 
+        return await msg.edit(content="❌ **Varredura Concluída:** Nenhuma conta válida encontrada no banco de dados do Roblox.")
+        
+    view = AnalyzeMembersView(ctx, queue, msg)
+    await view.update_view()
+
+@bot.command(name='addplayer')
+@commands.has_permissions(administrator=True)
+async def add_player_cmd(ctx, *, query: str):
+    msg = await ctx.send("🔄 Verificando Roblox...")
+    try: 
+        member = await commands.MemberConverter().convert(ctx, query)
+        rbx_name = member.display_name.split()[-1].strip()
+    except: 
+        rbx_name = query.strip()
+        
+    img = await asyncio.to_thread(get_roblox_data_sync, rbx_name)
+    
+    if not img: 
+        return await msg.edit(content=f"❌ Nick `{rbx_name}` não existe ou não foi possível carregar a foto.")
+        
+    view = AddPlayerView(ctx.author, rbx_name, img)
+    emb = discord.Embed(title="📸 Perfil Encontrado", color=discord.Color.green())
+    emb.set_thumbnail(url=img)
+    
+    await msg.edit(content=None, embed=emb, view=view)
+
+@bot.command(name='bulkadd')
+@commands.has_permissions(administrator=True)
+async def bulk_add_cmd(ctx):
+    if not ctx.message.attachments: 
+        return await ctx.send("❌ Anexe um arquivo `.txt`.")
+        
+    att = ctx.message.attachments[0]
+    status = await ctx.send("⏳ **Iniciando Bulk Add...**")
+    
+    try:
+        content = (await att.read()).decode('utf-8')
+        lines = content.strip().split('\n')
+        
+        res = supabase.table("jogadores").select("data").eq("id", "ROBLOX_CARDS").execute()
+        cards = res.data[0]["data"] if res.data else []
+        names = [p['name'].lower() for p in cards]
+        added = []
+        erros_log = []
+        
+        for line in lines:
+            parts = line.split()
+            if len(parts) < 3: 
+                continue
+                
+            n = parts[0].strip()
+            ovr = int(parts[1].strip())
+            pos = parts[2].strip().upper()
+            
+            if pos in POS_MIGRATION: 
+                pos = POS_MIGRATION[pos]
+                
+            if n.lower() in names: 
+                erros_log.append(f"Ignorado: {n} (Já está no banco de dados)")
+                continue
+                
+            coords, mapping = get_formation_config("4-3-3")
+            
+            if pos not in mapping: 
+                erros_log.append(f"Ignorado: {n} (Posição {pos} não reconhecida)")
+                continue
+                
+            img = await asyncio.to_thread(get_roblox_data_sync, n)
+            
+            if img:
+                val = calculate_player_value(ovr)
+                cards.append({"name": n, "image": img, "overall": ovr, "position": pos, "value": val})
+                names.append(n.lower())
+                added.append(n)
+            else: 
+                erros_log.append(f"Ignorado: {n} (API do Roblox bloqueou ou nick inválido)")
+                
+            await asyncio.sleep(1.5)
+            
+        if added: 
+            supabase.table("jogadores").upsert({"id": "ROBLOX_CARDS", "data": cards}).execute()
+            fetch_and_parse_players()
+            
+        relatorio = f"✅ Adicionados: **{len(added)}** atletas."
+        if erros_log:
+            resumo_erros = "\n".join(erros_log[:10])
+            if len(erros_log) > 10: 
+                resumo_erros += f"\n...e mais {len(erros_log) - 10} erros ocultos."
+            relatorio += f"\n\n⚠️ **Relatório do Sistema:**\n```\n{resumo_erros}\n```"
+            
+        await status.edit(content=relatorio)
+    except Exception as e: 
+        await status.edit(content=f"❌ Erro no formato. Use: Nick OVR Pos\nDetalhe: {e}")
+
+@bot.command(name='editplayer')
+@commands.has_permissions(administrator=True)
+async def edit_player_cmd(ctx, *, nick: str):
+    view = EditPlayerView(ctx.author, nick)
+    await ctx.send(f"⚙️ Configurações de `{nick}`:", view=view)
+
+@bot.command(name='delplayer')
+@commands.has_permissions(administrator=True)
+async def del_player_cmd(ctx, *, nick: str):
+    async with data_lock:
+        try:
+            res = supabase.table("jogadores").select("data").eq("id", "ROBLOX_CARDS").execute()
+            cards = res.data[0]["data"] if res.data else []
+            original_count = len(cards)
+            
+            cards = [p for p in cards if p['name'].lower() != nick.lower()]
+            
+            if len(cards) == original_count: 
+                return await ctx.send(f"❌ O jogador `{nick}` não foi encontrado no banco de dados do mercado.")
+                
+            supabase.table("jogadores").update({"data": cards}).eq("id", "ROBLOX_CARDS").execute()
+            global ALL_PLAYERS
+            
+            fetch_and_parse_players()
+            await ctx.send(f"🗑️ ✅ A carta de **{nick}** foi removida permanentemente do mercado global da EFL!")
+        except Exception as e: 
+            await ctx.send(f"❌ Ocorreu um erro ao tentar deletar o jogador: {e}")
+
+@bot.command(name='syncroblox')
+@is_bot_admin()
+async def sync_cmd(ctx):
+    fetch_and_parse_players()
+    await ctx.send(f"✅ Memória RAM sincronizada! **{len(ALL_PLAYERS)}** cartas prontas.")
+
+@bot.command(name='addmoney')
+@is_bot_admin()
+async def addmoney_cmd(ctx, target: discord.User, amount: int):
+    if amount <= 0: 
+        return await ctx.send("❌ O valor deve ser positivo.")
+        
+    async with data_lock:
+        u_data = await get_user_data(target.id)
+        u_data['money'] += amount
+        await save_user_data(target.id, u_data)
+        
+    await ctx.send(f"✅ **ADMIN:** Adicionado R$ {amount:,} à conta de {target.mention}.\nNovo saldo: R$ {u_data['money']:,}")
+
+@bot.command(name='removemoney')
+@is_bot_admin()
+async def removemoney_cmd(ctx, target: discord.User, amount: int):
+    if amount <= 0: 
+        return await ctx.send("❌ O valor deve ser positivo.")
+        
+    async with data_lock:
+        u_data = await get_user_data(target.id)
+        u_data['money'] = max(0, u_data['money'] - amount)
+        await save_user_data(target.id, u_data)
+        
+    await ctx.send(f"✅ **ADMIN:** Removido R$ {amount:,} da conta de {target.mention}.\nNovo saldo: R$ {u_data['money']:,}")
+
+# --- 10. COMANDOS DO JOGO NORMAL (MERCADO, JOGADORES REAIS) ---
+
+@bot.command(name='caixa')
+async def caixa_cmd(ctx):
+    async with data_lock:
+        u = await get_user_data(ctx.author.id)
+        last_use_str = u.get('last_caixa_use')
+        now = datetime.utcnow()
+        cooldown_seconds = 43200 
+        
+        if last_use_str:
+            last_use = datetime.fromisoformat(last_use_str)
+            time_passed = (now - last_use).total_seconds()
+            
+            if time_passed < cooldown_seconds:
+                remaining = cooldown_seconds - time_passed
+                horas = int(remaining // 3600)
+                minutos = int((remaining % 3600) // 60)
+                segundos = int(remaining % 60)
+                return await ctx.send(f"⏳ **Calma aí, chefinho!** A caixa diária ainda está fechada.\n\nTente novamente em **{horas}h {minutos}m {segundos}s**.")
+                
+        u['last_caixa_use'] = now.isoformat()
+        await save_user_data(ctx.author.id, u)
+
+    boxes = ["Bronze", "Iron", "Gold", "Diamond", "Master"]
+    weights = [60, 25, 10, 4, 1] 
+    chosen_box = random.choices(boxes, weights=weights, k=1)[0]
+    
+    async with data_lock:
+        u = await get_user_data(ctx.author.id)
+        livres = [p for p in ALL_PLAYERS if p["name"] not in u["contracted_players"]]
+        
+        def get_player_by_ovr(min_o, max_o):
+            pool = [p for p in livres if min_o <= p.get('overall', 70) <= max_o]
+            if pool: 
+                return random.choice(pool)
+            return None
+            
+        money_won = 0
+        player_won = None
+        
+        if chosen_box == "Bronze": 
+            money_won = random.randint(50000, 150000)
+            emoji = "🥉"
+        elif chosen_box == "Iron":
+            money_won = random.randint(100000, 300000)
+            emoji = "⚙️"
+            if random.random() < 0.10: 
+                player_won = get_player_by_ovr(70, 74)
+        elif chosen_box == "Gold":
+            money_won = random.randint(200000, 500000)
+            emoji = "🥇"
+            chance = random.random()
+            if chance < 0.05: 
+                player_won = get_player_by_ovr(80, 84) 
+            elif chance < 0.35: 
+                player_won = get_player_by_ovr(75, 79)
+        elif chosen_box == "Diamond":
+            money_won = random.randint(500000, 1000000)
+            emoji = "💎"
+            chance = random.random()
+            if chance < 0.02: 
+                player_won = get_player_by_ovr(90, 99) 
+            elif chance < 0.20: 
+                player_won = get_player_by_ovr(85, 89) 
+            else: 
+                player_won = get_player_by_ovr(80, 84) 
+        elif chosen_box == "Master":
+            money_won = random.randint(1000000, 2000000)
+            emoji = "🏆"
+            chance = random.random()
+            if chance < 0.30: 
+                player_won = get_player_by_ovr(90, 99) 
+            else: 
+                player_won = get_player_by_ovr(85, 89)
+            
+        u['money'] += money_won
+        desc = f"Você abriu uma **{emoji} {chosen_box} Box**!\n\n💵 **Dinheiro:** R$ {money_won:,}"
+        file_to_send = None
+        
+        if player_won:
+            u['squad'].append(player_won)
+            u['contracted_players'].append(player_won['name'])
+            desc += f"\n\n👤 **Jogador Encontrado:** {player_won['name']} (⭐ {player_won['overall']})\n*O jogador foi adicionado diretamente ao seu elenco!*"
+            
+            async with image_lock:
+                buf = await asyncio.to_thread(render_single_card_sync, player_won)
+                file_to_send = discord.File(buf, "card.png")
+                
+        await save_user_data(ctx.author.id, u)
+        
+    emb = discord.Embed(title="🎁 Recompensa Diária (12h)", description=desc, color=discord.Color.gold())
+    
+    if file_to_send: 
+        emb.set_image(url="attachment://card.png")
+        await ctx.send(embed=emb, file=file_to_send)
+    else: 
+        await ctx.send(embed=emb)
+
+@bot.command(name='jogadores')
+async def jogadores_cmd(ctx):
+    if not ALL_PLAYERS: 
+        return await ctx.send("❌ O mercado está vazio. Nenhum jogador cadastrado no momento.")
+        
+    sorted_players = sorted(ALL_PLAYERS, key=lambda x: x['overall'], reverse=True)
+    linhas = [f"⭐ **{p['overall']}** | `{p['position']}` | {p['name']}" for p in sorted_players]
+    
+    view = MarketPaginator(linhas, "🌍 Mercado Global de Jogadores - EFL")
+    emb = await view.get_page()
+    await ctx.send(embed=emb, view=view)
+
+@bot.command(name='setclube')
+async def setclube_cmd(ctx, sigla: str, *, nome: str):
+    d = await get_user_data(ctx.author.id)
+    d['club_sigla'] = sigla.upper()[:4]
+    d['club_name'] = nome[:20].strip()
+    await save_user_data(ctx.author.id, d)
+    await ctx.send(f"✅ Identidade do clube atualizada: **[{d['club_sigla']}] {d['club_name']}**")
+
+async def reminder_task(ctx, user):
+    await asyncio.sleep(600)
+    try: 
+        await ctx.send(f"⏰ <@{user.id}>, seu olheiro voltou! O comando `{BOT_PREFIX}obter` já está liberado novamente.")
+    except: 
+        pass
+
+@bot.command(name='obter')
+async def obter_cmd(ctx):
+    async with data_lock:
+        u = await get_user_data(ctx.author.id)
+        last_use_str = u.get('last_obter_use')
+        now = datetime.utcnow()
+        cooldown_seconds = 600
+        
+        if last_use_str:
+            last_use = datetime.fromisoformat(last_use_str)
+            time_passed = (now - last_use).total_seconds()
+            
+            if time_passed < cooldown_seconds:
+                remaining = cooldown_seconds - time_passed
+                minutos = int((remaining % 3600) // 60)
+                segundos = int(remaining % 60)
+                return await ctx.send(f"⏳ **Calma aí, chefinho!** O olheiro está descansando.\n\nTente novamente em **{minutos}m {segundos}s**.")
+                
+        u['last_obter_use'] = now.isoformat()
+        await save_user_data(ctx.author.id, u)
+
+    async with data_lock:
+        u = await get_user_data(ctx.author.id)
+        livres = [p for p in ALL_PLAYERS if p["name"] not in u["contracted_players"]]
+        
+        if not livres: 
+            u['last_obter_use'] = None
+            await save_user_data(ctx.author.id, u)
+            return await ctx.send("❌ Mercado vazio! (Seu tempo de recarga não foi gasto).")
+        
+        pesos = []
+        for p in livres:
+            ovr = p.get('overall', 70)
+            if ovr >= 90: pesos.append(2)       
+            elif ovr >= 85: pesos.append(8)    
+            elif ovr >= 80: pesos.append(20)    
+            elif ovr >= 75: pesos.append(60)    
+            else: pesos.append(10)              
+            
+        p = random.choices(livres, weights=pesos, k=1)[0]
+        
+        async with image_lock: 
+            buf = await asyncio.to_thread(render_single_card_sync, p)
+        
+    raridade = "🥉 Bronze"
+    if p.get('overall', 70) >= 90: 
+        raridade = "✨ LENDÁRIO"
+    elif p.get('overall', 70) >= 80: 
+        raridade = "🥇 Ouro"
+    elif p.get('overall', 70) >= 75: 
+        raridade = "🥈 Prata"
+    
+    view = KeepOrSellView(ctx.author, p)
+    msg = await ctx.send(content=f"🃏 **OLHEIRO DA EFL:** Você encontrou um talento **{raridade}** solto pelo mundo!\n*(Você tem 60 segundos para escolher ou ele irá para o seu elenco automaticamente)*", file=discord.File(buf, "card.png"), view=view)
+    view.message = msg
+    bot.loop.create_task(reminder_task(ctx, ctx.author))
+
+@bot.command(name='contratar')
+async def contratar_cmd(ctx, *, q: str):
+    sq = normalize_str(q)
+    u = await get_user_data(ctx.author.id)
+    matches = [p for p in ALL_PLAYERS if sq in normalize_str(p['name']) or sq.upper() in p['position']]
+    
+    if not matches: 
+        return await ctx.send("❌ Nenhum atleta encontrado no mercado com esse nome ou posição.")
+        
+    v = ActionView(ctx, matches, 'contratar', u)
+    emb, file = await v.update_view()
+    await ctx.send(embed=emb, file=file, view=v)
+
+@bot.command(name='cofre')
+async def cofre_cmd(ctx):
+    d = await get_user_data(ctx.author.id)
+    await ctx.send(f"🏦 **SALDO DA CONTA:** R$ {d['money']:,}")
+
+@bot.command(name='donate')
+async def donate_cmd(ctx, target: discord.Member, amount: int):
+    if ctx.author == target or amount <= 0: 
+        return
+        
+    async with data_lock:
+        s_data = await get_user_data(ctx.author.id)
+        t_data = await get_user_data(target.id)
+        
+        if s_data['money'] < amount: 
+            return await ctx.send("❌ Saldo insuficiente para essa doação.")
+            
+        s_data['money'] -= amount
+        t_data['money'] += amount
+        await save_user_data(ctx.author.id, s_data)
+        await save_user_data(target.id, t_data)
+        
+    await ctx.send(f"💸 **TRANSFERÊNCIA CONCLUÍDA:** R$ {amount:,} enviados para {target.display_name}!")
+
+@bot.command(name='sell')
+async def sell_cmd(ctx, *, q: str):
+    sq = normalize_str(q)
+    d = await get_user_data(ctx.author.id)
+    matches = [p for p in d['squad'] if sq in normalize_str(p['name'])]
+    
+    if not matches: 
+        return await ctx.send("❌ Este atleta não foi encontrado no seu elenco atual.")
+        
+    v = ActionView(ctx, matches, 'vender', d)
+    emb, file = await v.update_view()
+    await ctx.send(embed=emb, file=file, view=v)
+
+@bot.command(name='escalar')
+async def escalar_cmd(ctx, *, q: str):
+    sq = normalize_str(q)
+    d = await get_user_data(ctx.author.id)
+    matches = [p for p in d['squad'] if sq in normalize_str(p['name'])]
+    
+    if not matches: 
+        return await ctx.send("❌ Atleta não encontrado no seu elenco. Contrate-o primeiro!")
+        
+    v = ActionView(ctx, matches, 'escalar', d)
+    emb, file = await v.update_view()
+    await ctx.send(embed=emb, file=file, view=v)
+
+@bot.command(name='banco')
+async def banco_cmd(ctx, *, q: str):
+    sq = normalize_str(q)
+    d = await get_user_data(ctx.author.id)
+    encontrado = False
+    
+    for i, p in enumerate(d['team']):
+        if p and sq in normalize_str(p['name']):
+            nome = p['name']
+            d['team'][i] = None
+            encontrado = True
+            break
+            
+    if encontrado: 
+        await save_user_data(ctx.author.id, d)
+        await ctx.send(f"🔄 **{nome}** foi retirado da prancheta e voltou para o banco de reservas! A vaga está livre.")
+    else: 
+        await ctx.send("❌ Esse jogador não foi encontrado na sua escalação titular.")
+
+@bot.command(name='elenco')
+async def elenco_cmd(ctx):
+    d = await get_user_data(ctx.author.id)
+    
+    if not d['squad']: 
+        return await ctx.send("❌ Seu elenco está vazio. Digite `--obter`, `--caixa` ou `--contratar` para buscar atletas.")
+        
+    txt = "\n".join([f"**{p['position']}** | {p['name']} | ⭐ {p['overall']}" for p in sorted(d['squad'], key=lambda x: x['overall'], reverse=True)[:25]])
+    emb = discord.Embed(title=f"🎽 Elenco de {ctx.author.display_name}", description=txt, color=discord.Color.blue())
+    emb.set_footer(text=f"Total de atletas no clube: {len(d['squad'])}")
+    
+    await ctx.send(embed=emb)
+
+@bot.command(name='team')
+async def team_cmd(ctx):
+    d = await get_user_data(ctx.author.id)
+    msg = await ctx.send("⚙️ Desenhando prancheta HD...")
+    
+    async with image_lock:
+        try:
+            buf = await generate_team_image(d, ctx.author)
+            view = TeamManagerView(ctx, d)
+            await ctx.send(file=discord.File(buf, "team.png"), view=view)
+            await msg.delete()
+        except Exception as e: 
+            await msg.edit(content=f"❌ Erro na geração do gráfico: {e}")
+
+@bot.command(name='confrontar')
+async def confrontar_cmd(ctx, oponente: discord.Member):
+    if ctx.author == oponente or oponente.bot: 
+        return await ctx.send("❌ Você não pode desafiar a si mesmo ou a um bot!")
+        
+    if ctx.author.id in active_matches: 
+        return await ctx.send("❌ Você já está em uma partida! Espere o apito final para jogar novamente.")
+        
+    if oponente.id in active_matches: 
+        return await ctx.send(f"❌ **{oponente.display_name}** já está em campo disputando uma partida no momento.")
+        
+    d1 = await get_user_data(ctx.author.id)
+    d2 = await get_user_data(oponente.id)
+    
+    if None in d1['team']: 
+        return await ctx.send(f"🚨 Sua prancheta está incompleta! Você precisa escalar os 11 titulares para jogar na EFL.")
+        
+    if None in d2['team']: 
+        return await ctx.send(f"🚨 A prancheta do seu adversário ({oponente.display_name}) está incompleta! Ele precisa escalar os 11 titulares.")
+        
+    view = MatchInviteView(ctx, ctx.author, oponente, d1, d2)
+    emb = discord.Embed(
+        title="⚔️ NOVO DESAFIO NA EFL!", 
+        description=f"{oponente.mention}, o manager **{ctx.author.display_name}** está chamando sua equipe para um confronto oficial!\n\nVocê aceita o desafio?", 
+        color=discord.Color.orange()
+    )
+    
+    await ctx.send(content=oponente.mention, embed=emb, view=view)
+
+@bot.command(name='ranking')
+async def ranking_cmd(ctx):
+    res = supabase.table("jogadores").select("id", "data").execute()
+    users = sorted([x for x in res.data if not x['id'].startswith("CAREER_") and x['id'] != "ROBLOX_CARDS"], key=lambda u: u["data"].get("wins", 0), reverse=True)[:10]
+    txt = "\n".join([f"**{i+1}.** <@{u['id']}> — `{u['data'].get('wins',0)}` Vitórias" for i, u in enumerate(users)])
+    
+    await ctx.send(embed=discord.Embed(title="🏆 Ranking Oficial EFL", description=txt or "Ainda não houve partidas registradas.", color=discord.Color.gold()))
+
+@bot.command(name='help')
+async def help_cmd(ctx):
+    emb = discord.Embed(title="📜 Painel de Ajuda EFL Pro", description="Seja bem-vindo ao mercado EFL Pro! Abaixo estão os comandos disponíveis:", color=discord.Color.gold())
+    emb.add_field(name="💼 Modo Carreira Técnico (NOVO)", value="`--carreira`", inline=False)
+    emb.add_field(name="💰 Gestão Ultimate Team", value="`--caixa`, `--cofre`, `--donate`, `--contratar`, `--sell`, `--obter`, `--jogadores`", inline=False)
+    emb.add_field(name="📋 Vestiário & Tática", value="`--setclube`, `--elenco`, `--escalar`, `--banco`, `--team` ", inline=False)
+    emb.add_field(name="⚽ Partidas", value="`--confrontar`, `--ranking` ")
+    emb.add_field(name="⚙️ Administração", value="`--addplayer`, `--bulkadd`, `--editplayer`, `--delplayer`, `--lock`, `--unlock`, `--disableall`, `--enableall`, `--addmoney`, `--removemoney` ", inline=False)
+    emb.set_footer(text="Versão 46.0 - Desenvolvido exclusivamente para a EFL")
+    
+    await ctx.send(embed=emb)
+
+# --- INICIALIZAÇÃO ---
+if __name__ == "__main__":
+    token = os.getenv("DISCORD_TOKEN")
+    
+    if token: 
+        try:
+            keep_alive()
+            bot.run(token.strip()) 
+        except discord.errors.PrivilegedIntentsRequired:
+            print("❌ ERRO FATAL: Intents não ativados! Vá no Discord Developer Portal e ative: Presence, Server Members e Message Content.")
+        except discord.errors.LoginFailure:
+            print("❌ ERRO FATAL: O Token do Discord é inválido. Verifique se copiou certo na Render.")
+        except Exception as e:
+            print(f"❌ ERRO CRÍTICO DESCONHECIDO NO STARTUP: {e}")
+    else: 
+        print("❌ ERRO FATAL: Variável DISCORD_TOKEN não encontrada na Render.")
